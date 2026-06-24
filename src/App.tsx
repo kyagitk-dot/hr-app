@@ -596,11 +596,9 @@ export default function App() {
         const snap = await getDoc(doc(db,"users",user.uid));
         if(snap.exists()){
           setUserProfile({id:user.uid,...snap.data()});
-        } else {
-          // First-time manager setup
-          const profile = {name:user.displayName||user.email,email:user.email,role:"manager",grade:"G5",dept:"管理"};
-          await setDoc(doc(db,"users",user.uid),profile);
-          setUserProfile({id:user.uid,...profile});
+       } else {
+          // 未登録ユーザーはログアウト
+          await signOut(auth);
         }
       } else {
         setAuthUser(null);setUserProfile(null);
