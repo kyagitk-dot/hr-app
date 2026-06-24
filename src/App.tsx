@@ -648,8 +648,15 @@ export default function App() {
       if(user){
         setAuthUser(user);
         const snap = await getDoc(doc(db,"users",user.uid));
-        if(snap.exists()){
-          setUserProfile({id:user.uid,...snap.data()});
+       if(snap.exists()){
+  const data = snap.data();
+  if(data.status === "pending"){
+    await signOut(auth);
+    alert("承認待ちです。管理者の承認をお待ちください。");
+  } else {
+    setUserProfile({id:user.uid,...data});
+  }
+}
        } else {
           // 未登録ユーザーはログアウト
           await signOut(auth);
