@@ -223,8 +223,10 @@ const LoginPage = ({onLogin}) => {
     try {
       const { createUserWithEmailAndPassword } = await import("firebase/auth");
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const profile = {name:regName.trim(), email:email.trim(), role:"member", grade:regGrade, dept:regDept};
-      await setDoc(doc(db,"users",cred.user.uid), profile);
+      const profile = {name:regName.trim(), email:email.trim(), role:"member", grade:regGrade, dept:regDept, status:"pending"};
+await setDoc(doc(db,"users",cred.user.uid), profile);
+await signOut(auth);
+alert("登録申請を送信しました。管理者の承認をお待ちください。");
     } catch(e) {
       if(e.code==="auth/email-already-in-use") setError("このメールアドレスはすでに登録されています。");
       else if(e.code==="auth/weak-password") setError("パスワードは6文字以上にしてください。");
