@@ -194,20 +194,45 @@ const AppShell = ({nav,page,setPage,currentUser,activePeriod,onLogout,pageTitle,
 };
 
 // ── Login ──────────────────────────────────────────────────────
+// ── Login ──────────────────────────────────────────────────────
 const LoginPage = ({onLogin}) => {
-  const [email,setEmail] = useState("");
-  const [password,setPassword] = useState("");
-  const [showPw,setShowPw] = useState(false);
-  const [error,setError] = useState("");
-  const [loading,setLoading] = useState(false);
+  const [tab, setTab] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  // 初回登録用
+  const [regName, setRegName] = useState("");
+  const [regDept, setRegDept] = useState(DEPARTMENTS_DEFAULT[0]);
+  const [regGrade, setRegGrade] = useState("G1");
+
   const handleLogin = async () => {
     setError(""); setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth,email.trim(),password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch(e) {
       setError("メールアドレスまたはパスワードが正しくありません。");
     } finally { setLoading(false); }
   };
+
+  const handleRegister = async () => {
+    if(!regName.trim()){setError("名前を入力してください");return;}
+    if(!email.trim()||!password){setError("メールアドレスとパスワードを入力してください");return;}
+    setError(""); setLoading(true);
+    try {
+      const { createUserWithEmailAndPassword } = await import("firebase/auth");
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const profile = {name:regName.trim(), email:email.trim(), role:"member", grade:regGrade, dept:regDept};
+      await setDoc(doc(db,"users",cred.user.uid), profile);
+    } catch(e) {
+      if(e.code==="auth/email-already-in-use") setError("このメールアドレスはすでに登録されています。");
+      else if(e.code==="auth/weak-password") setError("パスワードは6文字以上にしてください。");
+      else setError("登録に失敗しました："+e.message);
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.gray[50],padding:16,fontFamily:"system-ui,-apple-system,sans-serif"}}>
       <div style={{width:"100%",maxWidth:380}}>
@@ -216,19 +241,46 @@ const LoginPage = ({onLogin}) => {
           <div style={{fontSize:13,color:C.gray[400]}}>G1〜G5等級対応 · 100点満点評価制度</div>
         </div>
         <div style={{background:"#fff",borderRadius:14,border:`0.5px solid ${C.gray[100]}`,padding:"24px 20px"}}>
+          {/* タブ */}
+          <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:8,padding:3,marginBottom:20}}>
+            {[{id:"login",label:"ログイン"},{id:"register",label:"初回登録"}].map(t=>(
+              <button key={t.id} onClick={()=>{setTab(t.id);setError("");}} style={{flex:1,padding:"7px",fontSize:13,borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t.id?C.purple[400]:"transparent",color:tab===t.id?"#fff":C.gray[600],fontWeight:tab===t.id?500:400}}>{t.label}</button>
+            ))}
+          </div>
+          {/* メール */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>メールアドレス</div>
             <Input value={email} onChange={setEmail} placeholder="your@example.com" type="email"/>
           </div>
-          <div style={{marginBottom:18}}>
+          {/* パスワード */}
+          <div style={{marginBottom:tab==="register"?14:18}}>
             <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>パスワード</div>
             <div style={{position:"relative"}}>
               <Input value={password} onChange={setPassword} placeholder="パスワードを入力" type={showPw?"text":"password"} style={{paddingRight:52}}/>
               <button onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",fontSize:12,color:C.gray[400]}}>{showPw?"隠す":"表示"}</button>
             </div>
           </div>
+          {/* 初回登録フォーム */}
+          {tab==="register"&&(
+            <div style={{marginBottom:18,display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>名前</div>
+                <Input value={regName} onChange={setRegName} placeholder="例：山田 太郎"/>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>部署</div>
+                <SelectEl value={regDept} onChange={setRegDept} options={DEPARTMENTS_DEFAULT} style={{width:"100%"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>等級</div>
+                <SelectEl value={regGrade} onChange={setRegGrade} options={GRADES} style={{width:"100%"}}/>
+              </div>
+            </div>
+          )}
           {error&&<div style={{fontSize:12,color:C.coral[400],marginBottom:12,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>{error}</div>}
-          <button onClick={handleLogin} disabled={loading} style={{width:"100%",padding:11,fontSize:14,fontWeight:500,background:loading?C.gray[200]:C.purple[400],color:"#fff",border:"none",borderRadius:8,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit"}}>{loading?"ログイン中...":"ログイン"}</button>
+          <button onClick={tab==="login"?handleLogin:handleRegister} disabled={loading} style={{width:"100%",padding:11,fontSize:14,fontWeight:500,background:loading?C.gray[200]:C.purple[400],color:"#fff",border:"none",borderRadius:8,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit"}}>
+            {loading?(tab==="login"?"ログイン中...":"登録中..."):(tab==="login"?"ログイン":"登録してログイン")}
+          </button>
         </div>
       </div>
     </div>
