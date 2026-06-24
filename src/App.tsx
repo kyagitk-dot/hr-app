@@ -12,62 +12,96 @@ const C = {
 
 const GRADE_CRITERIA = {
   G1: [
-    { no:1, category:"成果", item:"任された業務目標を、期限・数量・品質を満たして安定的に達成している", points:10 },
-    { no:2, category:"成果", item:"業務品質を保ち、手続き漏れ・ミス・クレームを防止している", points:10 },
-    { no:3, category:"成果", item:"報告・連絡・提出物を期限内に行い、業務を滞らせない", points:10 },
-    { no:4, category:"スキル", item:"商品・サービス・業務ルールの基礎知識を理解し、実務で使えている", points:10 },
-    { no:5, category:"スキル", item:"接客・顧客対応・社外対応の基本動作を適切に行えている", points:10 },
-    { no:6, category:"スキル", item:"業務手順・現場ルールに沿って、正確に作業を実行できる", points:10 },
-    { no:7, category:"スキル", item:"指導内容を吸収し、次回以降の行動に反映できる", points:5 },
-    { no:8, category:"行動", item:"誠実に行動し、ルール・約束・コンプライアンスを守っている", points:10 },
-    { no:9, category:"行動", item:"周囲と協力し、感じよくコミュニケーションを取れている", points:10 },
-    { no:10, category:"行動", item:"指示待ちになりすぎず、自分で考えて動こうとしている", points:5 },
-    { no:11, category:"改善", item:"振り返りを行い、次回に向けて改善行動を起こしている", points:10 },
+    // 成果
+    { no:1,  category:"成果", item:"端末販売の日次・月次目標（台数・付帯）を安定して達成している", points:8 },
+    { no:2,  category:"成果", item:"光回線・保険・アクセサリ等の付帯商材を、指示に沿って案内できている", points:7 },
+    { no:3,  category:"成果", item:"手続き漏れ・入力ミス・契約不備がなく、クレームを防止している", points:5 },
+    // スキル
+    { no:4,  category:"スキル", item:"主要機種の基本スペック・料金プランの仕組みを正確に説明できる", points:8 },
+    { no:5,  category:"スキル", item:"光回線・SIMカード・オプションの基礎知識を理解し、案内に使えている", points:7 },
+    { no:6,  category:"スキル", item:"接客の基本動作（挨拶・ニーズヒアリング・説明・クロージング）を実践できている", points:8 },
+    { no:7,  category:"スキル", item:"端末操作・システム入力・書類作成を正確に行えている", points:5 },
+    { no:8,  category:"スキル", item:"指導・フィードバックを素直に受け止め、次の接客に反映できている", points:5 },
+    // 行動
+    { no:9,  category:"行動", item:"誠実に行動し、個人情報保護・コンプライアンスを遵守している", points:8 },
+    { no:10, category:"行動", item:"店舗スタッフ・他の応援スタッフと協力し、店舗全体に貢献している", points:7 },
+    { no:11, category:"行動", item:"指示待ちにならず、空き時間に学習・声かけ・整備など自ら動けている", points:5 },
+    // 改善
+    { no:12, category:"改善", item:"日々の接客を振り返り、翌日の改善行動につなげている", points:7 },
   ],
   G2: [
-    { no:1, category:"成果", item:"担当KPI(売上、件数、品質、進捗等)を安定して達成している", points:15 },
-    { no:2, category:"成果", item:"業務の生産性と品質を両立し、安定運用に貢献している", points:10 },
-    { no:3, category:"成果", item:"問題発生時に初動対応し、被害拡大を防いでいる", points:10 },
-    { no:4, category:"スキル", item:"担当領域の実務知識・商品知識・業務知識を十分に使いこなしている", points:10 },
-    { no:5, category:"スキル", item:"顧客・取引先・社内に対し、分かりやすく説明・提案・調整できる", points:10 },
-    { no:6, category:"スキル", item:"数字・進捗・優先順位を意識し、自分の業務を自己管理できる", points:10 },
-    { no:7, category:"行動", item:"顧客・現場・相手視点で考え、期待に応える行動を取っている", points:10 },
-    { no:8, category:"行動", item:"周囲と建設的に連携し、協力して業務成果を出している", points:10 },
-    { no:9, category:"行動", item:"自分の担当範囲に責任を持ち、最後までやり切っている", points:5 },
-    { no:10, category:"改善", item:"小さな問題やムダに気づき、改善提案・改善実行ができている", points:10 },
+    // 成果
+    { no:1,  category:"成果", item:"端末・光回線・付帯商材のKPI（台数・件数・収益）を安定して達成している", points:10 },
+    { no:2,  category:"成果", item:"単価向上（ハイエンド端末・複数商材提案）に取り組み、成果を出している", points:8 },
+    { no:3,  category:"成果", item:"契約不備・解約・クレームを最小限に抑え、品質を維持している", points:7 },
+    // スキル
+    { no:4,  category:"スキル", item:"機種・料金プラン・割引施策を深く理解し、顧客に最適提案ができる", points:8 },
+    { no:5,  category:"スキル", item:"光回線・保険・端末保証・アクセサリ等の複合提案ができている", points:8 },
+    { no:6,  category:"スキル", item:"顧客のニーズ・懸念を的確に把握し、納得感のある説明・クロージングができる", points:8 },
+    { no:7,  category:"スキル", item:"自分の数字・進捗を把握し、目標達成に向けて行動を管理できている", points:7 },
+    // 行動
+    { no:8,  category:"行動", item:"顧客視点でアフターフォロー（乗り換え提案・満足度確認）を行っている", points:7 },
+    { no:9,  category:"行動", item:"店舗スタッフと連携し、応援としてポジティブな影響を与えている", points:7 },
+    { no:10, category:"行動", item:"困難な案件・クレーム対応でも諦めず、やり切る姿勢を持っている", points:5 },
+    // 改善
+    { no:11, category:"改善", item:"自分の苦手な商材・提案パターンを分析し、改善行動を実践している", points:5 },
+    { no:12, category:"改善", item:"トークスクリプト・成功事例を蓄積し、自己成長につなげている", points:5 },
   ],
   G3: [
-    { no:1, category:"成果", item:"担当領域・案件・チームのKPIを主担当として達成している", points:20 },
-    { no:2, category:"成果", item:"品質・納期・顧客満足・現場安定を両立して案件運営している", points:10 },
-    { no:3, category:"成果", item:"利益・コスト・リスクを意識し、事業性ある判断を行っている", points:10 },
-    { no:4, category:"スキル", item:"計画立案・段取り・ディレクションにより、周囲を動かせている", points:10 },
-    { no:5, category:"スキル", item:"課題分析・原因特定・解決策立案を実務に落とし込めている", points:10 },
-    { no:6, category:"行動", item:"社内外の関係者に働きかけ、合意形成しながら成果につなげている", points:10 },
-    { no:7, category:"行動", item:"困難な状況でも当事者意識を持ち、最後までやり切っている", points:10 },
-    { no:8, category:"行動", item:"後輩・メンバーへの助言・指導・支援ができている", points:5 },
-    { no:9, category:"組織貢献", item:"業務標準化・ナレッジ共有・再発防止を進めている", points:10 },
-    { no:10, category:"組織貢献", item:"部門横断・他チーム連携により、組織全体へ貢献している", points:5 },
+    // 成果
+    { no:1,  category:"成果", item:"担当案件・チームのKPI（台数・光件数・付帯率・収益）を主担当として達成している", points:15 },
+    { no:2,  category:"成果", item:"ハイエンド端末・光回線・複合商材の高単価提案で収益貢献している", points:10 },
+    { no:3,  category:"成果", item:"品質・顧客満足・解約防止を両立しながら、安定した販売運営ができている", points:8 },
+    // スキル
+    { no:4,  category:"スキル", item:"最新機種・料金改定・新サービスをいち早くキャッチアップし、提案に活かせている", points:8 },
+    { no:5,  category:"スキル", item:"顧客の潜在ニーズを引き出し、光回線・保険・副商材を自然な流れで提案できる", points:8 },
+    { no:6,  category:"スキル", item:"課題分析・原因特定・改善策立案を行い、自チームの販売力を高めている", points:7 },
+    // 行動
+    { no:7,  category:"行動", item:"店長・店舗スタッフと密に連携し、店舗全体の目標達成に向けて働きかけている", points:7 },
+    { no:8,  category:"行動", item:"困難な顧客・クレーム案件でも当事者意識を持ち、最後まで対応できている", points:5 },
+    { no:9,  category:"行動", item:"後輩・新人スタッフへの指導・ロープレ・フォローを積極的に行っている", points:5 },
+    // 組織貢献
+    { no:10, category:"組織貢献", item:"成功トーク・提案手法を言語化・共有し、チーム全体のスキル底上げをしている", points:5 },
+    { no:11, category:"組織貢献", item:"他店舗・本部との情報共有・横展開に積極的に関わっている", points:5 },
+    { no:12, category:"組織貢献", item:"店舗環境整備・ディスプレイ改善・業務フロー見直しに貢献している", points:3 },
   ],
   G4: [
-    { no:1, category:"成果", item:"チーム・部門のKPI(売上、利益、品質、案件進捗等)を達成している", points:20 },
-    { no:2, category:"成果", item:"品質・収益・納期・リスクを総合的に管理し、安定した運営を行っている", points:15 },
-    { no:3, category:"スキル", item:"事業・顧客・現場を踏まえた判断を行い、適切な意思決定ができる", points:10 },
-    { no:4, category:"スキル", item:"人員・案件・時間・コストの配分を最適化できる", points:5 },
-    { no:5, category:"行動", item:"経営・上位方針をチームに分かりやすく伝え、実行につなげている", points:10 },
-    { no:6, category:"行動", item:"公平性・誠実性・模範性を持って組織をリードしている", points:10 },
-    { no:7, category:"組織貢献", item:"業務改善・仕組み化・標準化により、チーム生産性を高めている", points:10 },
-    { no:8, category:"マネジメント", item:"メンバーごとに目標設定・進捗確認・フィードバックを行っている", points:10 },
-    { no:9, category:"マネジメント", item:"人材育成・配置・チームビルディングを通じて、強い組織を作っている", points:10 },
+    // 成果
+    { no:1,  category:"成果", item:"担当エリア・チームの販売KPI（台数・光件数・付帯収益・達成率）を達成している", points:15 },
+    { no:2,  category:"成果", item:"収益性を意識した施策（高単価化・付帯率向上・解約防止）を推進し、成果を出している", points:10 },
+    { no:3,  category:"成果", item:"品質・顧客満足・コンプライアンスを総合的に管理し、安定した運営を行っている", points:8 },
+    // スキル
+    { no:4,  category:"スキル", item:"市場動向・競合情報・メーカー施策を踏まえた判断・提案ができる", points:7 },
+    { no:5,  category:"スキル", item:"人員配置・シフト・目標設定を最適化し、チーム全体の生産性を高められる", points:7 },
+    // 行動
+    { no:6,  category:"行動", item:"会社・エリアの方針をメンバーに分かりやすく伝え、現場実行につなげている", points:8 },
+    { no:7,  category:"行動", item:"公平性・模範性を持って組織をリードし、チームの士気を高めている", points:7 },
+    // 組織貢献
+    { no:8,  category:"組織貢献", item:"販売手法・接客トーク・業務フローの仕組み化・標準化を進めている", points:8 },
+    { no:9,  category:"組織貢献", item:"他店舗・本部・メーカーと連携し、組織全体の課題解決に貢献している", points:5 },
+    // マネジメント
+    { no:10, category:"マネジメント", item:"メンバーの目標設定・進捗管理・個別フィードバックを適切に行っている", points:8 },
+    { no:11, category:"マネジメント", item:"スタッフの育成・モチベーション管理・人材定着に取り組んでいる", points:7 },
+    { no:12, category:"マネジメント", item:"次期リーダー候補の発掘・育成を意識した組織づくりができている", points:5 },
   ],
   G5: [
-    { no:1, category:"成果", item:"部門KGI/KPI(売上、利益、継続率、生産性等)を中長期視点で達成している", points:20 },
-    { no:2, category:"成果", item:"中期施策・重点戦略を推進し、事業成長に結びつけている", points:10 },
-    { no:3, category:"スキル", item:"市場・顧客・競争・組織状況を踏まえ、戦略を設計・修正できる", points:10 },
-    { no:4, category:"行動", item:"経営層・他部門・重要顧客を巻き込み、全社的な影響力を発揮している", points:10 },
-    { no:5, category:"行動", item:"変化を恐れず、難しい改革も推進するリーダーシップを発揮している", points:10 },
-    { no:6, category:"組織貢献", item:"自部門最適でなく、全社最適の視点で意思決定・資源配分を行っている", points:10 },
-    { no:7, category:"マネジメント", item:"管理職・リーダー層を育成し、強いマネジメントラインを構築している", points:15 },
-    { no:8, category:"マネジメント", item:"後継者育成、組織設計、人材配置を通じて、持続可能な組織を作っている", points:15 },
+    // 成果
+    { no:1,  category:"成果", item:"担当部門・エリア全体のKGI/KPI（売上・光収益・付帯率・継続率）を中長期視点で達成している", points:15 },
+    { no:2,  category:"成果", item:"新商材・新施策・新チャネルを推進し、事業成長に結びつけている", points:10 },
+    { no:3,  category:"成果", item:"収益・コスト・リスクを統合的にマネジメントし、部門の安定経営に貢献している", points:8 },
+    // スキル
+    { no:4,  category:"スキル", item:"通信業界の市場動向・規制変化・競合戦略を踏まえ、事業戦略を設計・修正できる", points:8 },
+    { no:5,  category:"スキル", item:"メーカー・通信キャリア・店舗本部との交渉・連携を主導できる", points:7 },
+    // 行動
+    { no:6,  category:"行動", item:"経営層・他部門・重要パートナーを巻き込み、全社的な影響力を発揮している", points:8 },
+    { no:7,  category:"行動", item:"変化を恐れず、販売モデル変革・DX推進など難しい改革を推進できている", points:7 },
+    // 組織貢献
+    { no:8,  category:"組織貢献", item:"全社最適の視点で意思決定・資源配分を行い、部門間シナジーを生み出している", points:7 },
+    { no:9,  category:"組織貢献", item:"業界ナレッジ・ベストプラクティスを組織に還元し、全体レベルを引き上げている", points:5 },
+    // マネジメント
+    { no:10, category:"マネジメント", item:"管理職・エリアマネージャー層を育成し、強いマネジメントラインを構築している", points:10 },
+    { no:11, category:"マネジメント", item:"後継者育成・組織設計・人材配置を通じて、持続可能な販売組織を作っている", points:8 },
+    { no:12, category:"マネジメント", item:"スタッフの採用・定着・エンゲージメント向上に取り組み、人的資本を高めている", points:7 },
   ],
 };
 
@@ -140,6 +174,7 @@ const PERIODS = [
 const DEPARTMENTS = ["営業1部","営業2部","管理部","経営企画","マーケティング","エンジニアリング"];
 const GRADES = ["G1","G2","G3","G4","G5"];
 
+// ── UI Primitives ──────────────────────────────────────────────
 const Avatar = ({ name, idx, size=36 }) => {
   const p = getAvatarColor(idx);
   return <div style={{ width:size, height:size, borderRadius:"50%", background:p[50], color:p[800], display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.34, fontWeight:500, flexShrink:0 }}>{initials(name)}</div>;
@@ -223,6 +258,7 @@ const Modal = ({ title, onClose, children, width=480 }) => (
   </div>
 );
 
+// ── Score Input Component ──────────────────────────────────────
 const ScoreInput = ({ value, onChange, readonly }) => (
   <div style={{ display:"flex", gap:4 }}>
     {[1,2,3,4,5].map(n=>(
@@ -237,19 +273,22 @@ const ScoreInput = ({ value, onChange, readonly }) => (
   </div>
 );
 
+// ── Category color ─────────────────────────────────────────────
 const categoryColor = (cat) => {
   const m = { "成果":C.teal, "スキル":C.blue, "行動":C.purple, "改善":C.amber, "組織貢献":C.green, "マネジメント":C.coral };
   return m[cat] || C.gray;
 };
 
-const LoginPage = ({ users, onLogin }) => {
+// ── Login ──────────────────────────────────────────────────────
+const LoginPage = ({ users, managerAccount, onLogin }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const handleLogin = () => {
     setError("");
-    const match = [MANAGER_ACCOUNT,...users].find(u=>u.email===email.trim()&&u.password===password);
+    const allAccounts = [managerAccount||MANAGER_ACCOUNT, ...users];
+    const match = allAccounts.find(u=>u.email===email.trim()&&u.password===password);
     if (match) onLogin(match);
     else setError("メールアドレスまたはパスワードが正しくありません。");
   };
@@ -275,25 +314,13 @@ const LoginPage = ({ users, onLogin }) => {
           {error && <div style={{ fontSize:12, color:C.coral[400], marginBottom:12, padding:"8px 12px", background:C.coral[50], borderRadius:8 }}>{error}</div>}
           <button onClick={handleLogin} style={{ width:"100%", padding:11, fontSize:14, fontWeight:500, background:C.purple[400], color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>ログイン</button>
         </div>
-        <div style={{ marginTop:14, background:"#fff", borderRadius:12, border:`0.5px solid ${C.gray[100]}`, padding:"14px 18px" }}>
-          <div style={{ fontSize:11, fontWeight:500, color:C.gray[400], marginBottom:8 }}>デモ用アカウント</div>
-          {[
-            { label:"マネージャー", email:"yamada@example.com", pw:"manager123", color:C.purple[600] },
-            { label:"G3社員（田中）", email:"tanaka@example.com", pw:"tanaka123", color:C.teal[400] },
-            { label:"G4社員（佐藤）", email:"sato@example.com", pw:"sato123", color:C.teal[400] },
-          ].map(a=>(
-            <div key={a.email} style={{ marginBottom:5, fontSize:12, color:C.gray[600] }}>
-              <span style={{ color:a.color, fontWeight:500 }}>{a.label}：</span>
-              <button onClick={()=>{setEmail(a.email);setPassword(a.pw);}} style={{ background:"none", border:"none", color:C.purple[400], cursor:"pointer", fontSize:12, padding:0, textDecoration:"underline", fontFamily:"inherit" }}>{a.email}</button>
-              {" / "}{a.pw}
-            </div>
-          ))}
-        </div>
+
       </div>
     </div>
   );
 };
 
+// ── Bottom Nav (mobile) ────────────────────────────────────────
 const BottomNav = ({ nav, page, setPage }) => (
   <div style={{ position:"fixed", bottom:0, left:0, right:0, background:"#fff", borderTop:`0.5px solid ${C.gray[100]}`, display:"flex", zIndex:100, paddingBottom:"env(safe-area-inset-bottom,0px)" }}>
     {nav.map(n=>(
@@ -309,6 +336,7 @@ const BottomNav = ({ nav, page, setPage }) => (
   </div>
 );
 
+// ── Sidebar ────────────────────────────────────────────────────
 const Sidebar = ({ nav, page, setPage, currentUser, activePeriod, onLogout }) => (
   <div style={{ width:220, flexShrink:0, background:"#fff", borderRight:`0.5px solid ${C.gray[100]}`, display:"flex", flexDirection:"column", height:"100vh" }}>
     <div style={{ padding:"18px 18px 14px", borderBottom:`0.5px solid ${C.gray[100]}` }}>
@@ -343,6 +371,7 @@ const Sidebar = ({ nav, page, setPage, currentUser, activePeriod, onLogout }) =>
   </div>
 );
 
+// ── App Shell ──────────────────────────────────────────────────
 const AppShell = ({ nav, page, setPage, currentUser, activePeriod, onLogout, pageTitle, children }) => {
   const isMobile = useIsMobile();
   return (
@@ -365,6 +394,7 @@ const AppShell = ({ nav, page, setPage, currentUser, activePeriod, onLogout, pag
   );
 };
 
+// ── Dashboard ──────────────────────────────────────────────────
 const Dashboard = ({ users, evals, onNavigate, onSelectUser }) => {
   const isMobile = useIsMobile();
   const usersWithScore = users.map((u,i) => {
@@ -386,6 +416,8 @@ const Dashboard = ({ users, evals, onNavigate, onSelectUser }) => {
         <MetricCard label="チーム平均点" value={avgScore??"-"} sub="/ 100点" accent={avgScore>=80?C.teal:avgScore>=60?C.purple:avgScore?C.amber:null} />
         <MetricCard label="評価期間" value="2026H1" sub="上半期" />
       </div>
+
+      {/* Grade distribution */}
       <Card>
         <CardTitle>等級別構成</CardTitle>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -401,6 +433,7 @@ const Dashboard = ({ users, evals, onNavigate, onSelectUser }) => {
           })}
         </div>
       </Card>
+
       <Card>
         <CardTitle action={<Btn small primary onClick={()=>onNavigate("evaluation")}>+ 評価を入力</Btn>}>メンバー一覧</CardTitle>
         {usersWithScore.map((u,i) => (
@@ -428,6 +461,7 @@ const Dashboard = ({ users, evals, onNavigate, onSelectUser }) => {
   );
 };
 
+// ── Evaluation Form ────────────────────────────────────────────
 const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUserId }) => {
   const [tab, setTab] = useState("manager");
   const isMobile = useIsMobile();
@@ -457,9 +491,13 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
           options={users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))} style={{ flex:1, minWidth:140 }} />
         <Btn small primary onClick={()=>updateEval("status","done")} disabled={eval_.status==="done"}>提出する</Btn>
       </div>
+
+      {/* Grade info */}
       <div style={{ background:C.purple[50], border:`1px solid ${C.purple[200]}`, borderRadius:10, padding:"10px 14px", marginBottom:12, fontSize:12, color:C.purple[800] }}>
         <strong>{user?.grade}</strong> — {GRADE_DEFS[user?.grade]}
       </div>
+
+      {/* Tab */}
       <div style={{ display:"flex", gap:6, background:C.gray[50], borderRadius:10, padding:4, marginBottom:14, width:"fit-content" }}>
         {["manager","self"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{
@@ -470,6 +508,8 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
           }}>{t==="manager"?"上司評価":"自己評価"}</button>
         ))}
       </div>
+
+      {/* Score summary */}
       {rank && (
         <Card style={{ borderLeft:`3px solid ${rankColor(rank)[400]}` }}>
           <div style={{ display:"flex", alignItems:"center", gap:16 }}>
@@ -490,6 +530,8 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
           </div>
         </Card>
       )}
+
+      {/* Criteria by category */}
       {Object.entries(categoryGroups).map(([cat, items]) => {
         const cc = categoryColor(cat);
         return (
@@ -525,6 +567,8 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
           </Card>
         );
       })}
+
+      {/* 昇格判定補助欄 */}
       <Card>
         <CardTitle>昇格判定補助欄</CardTitle>
         <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:10 }}>
@@ -542,6 +586,8 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
           ))}
         </div>
       </Card>
+
+      {/* 総合コメント */}
       <Card>
         <CardTitle>総合コメント・育成計画</CardTitle>
         {[
@@ -557,6 +603,8 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
           </div>
         ))}
       </Card>
+
+      {/* 自己評価参照 */}
       {tab==="manager" && eval_.selfScores && Object.keys(eval_.selfScores).length>0 && (
         <Card style={{ borderLeft:`3px solid ${C.teal[400]}` }}>
           <CardTitle>本人の自己評価（参考）</CardTitle>
@@ -569,6 +617,7 @@ const EvaluationPage = ({ users, evals, setEvals, selectedUserId, setSelectedUse
   );
 };
 
+// ── Results ────────────────────────────────────────────────────
 const ResultsPage = ({ users, evals }) => {
   const isMobile = useIsMobile();
   const rows = users.map((u,i) => {
@@ -577,10 +626,12 @@ const ResultsPage = ({ users, evals }) => {
     const ss = e.selfScores&&Object.keys(e.selfScores).length?calcScore(e.selfScores,u.grade):null;
     return { ...u, idx:i, ms, ss, rank:ms!==null?calcRank(ms):null };
   });
+
   const gradeAvgs = GRADES.map(g => {
     const ug = rows.filter(u=>u.grade===g&&u.ms!==null);
     return { grade:g, avg:ug.length?Math.round(ug.reduce((a,u)=>a+u.ms,0)/ug.length):null, count:ug.length };
   });
+
   const rankCounts = ["S","A","B","C","D"].map(r=>({ rank:r, count:rows.filter(u=>u.rank===r).length }));
 
   return (
@@ -589,6 +640,7 @@ const ResultsPage = ({ users, evals }) => {
         <MetricCard label="評価完了" value={rows.filter(u=>u.rank).length} sub={`/ ${users.length} 名`} />
         <MetricCard label="チーム平均点" value={rows.filter(u=>u.ms!==null).length?Math.round(rows.filter(u=>u.ms!==null).reduce((a,u)=>a+u.ms,0)/rows.filter(u=>u.ms!==null).length):"-"} sub="/ 100点" />
       </div>
+
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12, marginBottom:12 }}>
         <Card>
           <CardTitle>ランク別分布</CardTitle>
@@ -618,6 +670,7 @@ const ResultsPage = ({ users, evals }) => {
           ))}
         </Card>
       </div>
+
       <Card>
         <CardTitle>メンバー別スコア一覧</CardTitle>
         <div style={{ overflowX:"auto" }}>
@@ -653,6 +706,7 @@ const ResultsPage = ({ users, evals }) => {
   );
 };
 
+// ── AI Analysis ────────────────────────────────────────────────
 const AIPage = ({ users, evals }) => {
   const [target, setTarget] = useState("all");
   const [loading, setLoading] = useState(false);
@@ -718,6 +772,8 @@ const AIPage = ({ users, evals }) => {
           分析対象を選んで「AI分析を実行」を押してください。
         </div>
       )}
+
+      {/* Rank legend */}
       <Card style={{ marginTop:12 }}>
         <CardTitle>評価ランク基準</CardTitle>
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -734,6 +790,7 @@ const AIPage = ({ users, evals }) => {
   );
 };
 
+// ── User Management ────────────────────────────────────────────
 const UserManagePage = ({ users, setUsers }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -787,6 +844,7 @@ const UserManagePage = ({ users, setUsers }) => {
   );
 };
 
+// ── Period Management ──────────────────────────────────────────
 const PeriodPage = ({ periods, setPeriods }) => {
   const [showModal, setShowModal] = useState(false);
   const [label, setLabel] = useState("");
@@ -817,6 +875,7 @@ const PeriodPage = ({ periods, setPeriods }) => {
   );
 };
 
+// ── Employee View ──────────────────────────────────────────────
 const EmployeeView = ({ currentUser, evals, setEvals, periods, onLogout }) => {
   const [page, setPage] = useState("myeval");
   const activePeriod = periods.find(p=>p.active)||periods[0];
@@ -831,10 +890,11 @@ const EmployeeView = ({ currentUser, evals, setEvals, periods, onLogout }) => {
   const managerRank = Object.keys(managerScores).length?calcRank(totalManager):null;
 
   const EMP_NAV = [
-    { id:"myeval", label:"自己評価", shortLabel:"評価", icon:"✎" },
+    { id:"myeval", label:"自分の評価", shortLabel:"評価", icon:"✎" },
     { id:"myresult", label:"評価結果", shortLabel:"結果", icon:"▦" },
   ];
   const pageTitles = { myeval:"自己評価を入力", myresult:"評価結果" };
+
   const categoryGroups = criteria.reduce((acc,c)=>{ if(!acc[c.category]) acc[c.category]=[]; acc[c.category].push(c); return acc; }, {});
 
   return (
@@ -912,40 +972,247 @@ const EmployeeView = ({ currentUser, evals, setEvals, periods, onLogout }) => {
   );
 };
 
+// ── Settings Page ──────────────────────────────────────────────
+const SettingsPage = ({ currentUser, setCurrentUser, users, setUsers, departments, setDepartments, gradeDefs, setGradeDefs, periods, setPeriods, managerAccount, setManagerAccount }) => {
+  const [tab, setTab] = useState("account");
+  const [saved, setSaved] = useState("");
+
+  const showSaved = (msg="保存しました") => { setSaved(msg); setTimeout(()=>setSaved(""), 2500); };
+
+  // Account / Password
+  const [newName, setNewName] = useState(currentUser.name);
+  const [oldPw, setOldPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [pwError, setPwError] = useState("");
+
+  const saveAccount = () => {
+    if (newName.trim()) {
+      setCurrentUser(prev=>({...prev, name:newName.trim()}));
+      setManagerAccount(prev=>({...prev, name:newName.trim()}));
+      showSaved("名前を更新しました");
+    }
+  };
+  const savePassword = () => {
+    setPwError("");
+    if (oldPw !== managerAccount.password) { setPwError("現在のパスワードが正しくありません"); return; }
+    if (newPw.length < 4) { setPwError("新しいパスワードは4文字以上にしてください"); return; }
+    setManagerAccount(prev=>({...prev, password:newPw}));
+    setCurrentUser(prev=>({...prev, password:newPw}));
+    setOldPw(""); setNewPw("");
+    showSaved("パスワードを変更しました");
+  };
+
+  // Departments
+  const [newDept, setNewDept] = useState("");
+  const addDept = () => { if(newDept.trim()&&!departments.includes(newDept.trim())) { setDepartments(prev=>[...prev,newDept.trim()]); setNewDept(""); showSaved("部署を追加しました"); } };
+  const removeDept = (d) => setDepartments(prev=>prev.filter(x=>x!==d));
+
+  // Grade defs
+  const [localGradeDefs, setLocalGradeDefs] = useState({...gradeDefs});
+  const saveGradeDefs = () => { setGradeDefs({...localGradeDefs}); showSaved("等級定義を保存しました"); };
+
+  // Periods
+  const [newPeriodLabel, setNewPeriodLabel] = useState("");
+  const addPeriod = () => { if(!newPeriodLabel.trim()) return; setPeriods(prev=>[...prev,{id:"p"+Date.now(),label:newPeriodLabel.trim(),active:false}]); setNewPeriodLabel(""); showSaved("評価期間を追加しました"); };
+  const removePeriod = (id) => setPeriods(prev=>prev.filter(p=>p.id!==id));
+  const setActivePeriod = (id) => { setPeriods(prev=>prev.map(p=>({...p,active:p.id===id}))); showSaved("アクティブ期間を変更しました"); };
+
+  const tabStyle = (t) => ({
+    padding:"8px 16px", fontSize:13, borderRadius:8, border:"none", cursor:"pointer", fontFamily:"inherit",
+    background:tab===t?C.purple[50]:"transparent",
+    color:tab===t?C.purple[800]:C.gray[600],
+    fontWeight:tab===t?500:400,
+  });
+
+  return (
+    <div>
+      {saved && (
+        <div style={{ background:C.green[50], border:`1px solid ${C.green[400]}`, borderRadius:8, padding:"8px 14px", marginBottom:12, fontSize:13, color:C.green[800], display:"flex", alignItems:"center", gap:6 }}>
+          ✓ {saved}
+        </div>
+      )}
+
+      <div style={{ display:"flex", gap:6, background:C.gray[50], borderRadius:10, padding:4, marginBottom:16, flexWrap:"wrap" }}>
+        {[
+          { id:"account", label:"アカウント" },
+          { id:"password", label:"パスワード" },
+          { id:"departments", label:"部署" },
+          { id:"grades", label:"等級定義" },
+          { id:"periods", label:"評価期間" },
+        ].map(t=>(
+          <button key={t.id} style={tabStyle(t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Account */}
+      {tab==="account" && (
+        <Card>
+          <CardTitle>アカウント情報</CardTitle>
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>メールアドレス</div>
+              <div style={{ fontSize:13, color:C.gray[600], padding:"9px 11px", background:C.gray[50], borderRadius:8 }}>{currentUser.email}</div>
+            </div>
+            <div>
+              <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>表示名</div>
+              <Input value={newName} onChange={setNewName} placeholder="名前" />
+            </div>
+            <Btn primary onClick={saveAccount}>保存する</Btn>
+          </div>
+        </Card>
+      )}
+
+      {/* Password */}
+      {tab==="password" && (
+        <Card>
+          <CardTitle>パスワード変更</CardTitle>
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>現在のパスワード</div>
+              <Input value={oldPw} onChange={setOldPw} placeholder="現在のパスワード" type="password" />
+            </div>
+            <div>
+              <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>新しいパスワード</div>
+              <Input value={newPw} onChange={setNewPw} placeholder="新しいパスワード（4文字以上）" type="password" />
+            </div>
+            {pwError && <div style={{ fontSize:12, color:C.coral[400], padding:"8px 12px", background:C.coral[50], borderRadius:8 }}>{pwError}</div>}
+            <Btn primary onClick={savePassword}>パスワードを変更する</Btn>
+          </div>
+        </Card>
+      )}
+
+      {/* Departments */}
+      {tab==="departments" && (
+        <Card>
+          <CardTitle>部署リスト</CardTitle>
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            <Input value={newDept} onChange={setNewDept} placeholder="新しい部署名" style={{ flex:1 }} />
+            <Btn primary onClick={addDept}>追加</Btn>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {departments.map(d=>(
+              <div key={d} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", background:C.gray[50], borderRadius:8 }}>
+                <span style={{ fontSize:13, color:C.gray[800] }}>{d}</span>
+                <Btn small danger onClick={()=>removeDept(d)}>削除</Btn>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Grade defs */}
+      {tab==="grades" && (
+        <Card>
+          <CardTitle action={<Btn small primary onClick={saveGradeDefs}>保存する</Btn>}>等級定義の編集</CardTitle>
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            {["G1","G2","G3","G4","G5"].map(g=>(
+              <div key={g}>
+                <div style={{ fontSize:12, color:C.purple[600], fontWeight:600, marginBottom:4 }}>{g}</div>
+                <Textarea
+                  rows={2}
+                  value={localGradeDefs[g]||""}
+                  onChange={v=>setLocalGradeDefs(prev=>({...prev,[g]:v}))}
+                  placeholder={`${g}の等級定義`}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Periods */}
+      {tab==="periods" && (
+        <Card>
+          <CardTitle>評価期間の管理</CardTitle>
+          <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+            <Input value={newPeriodLabel} onChange={setNewPeriodLabel} placeholder="例：2026年度 下半期" style={{ flex:1 }} />
+            <Btn primary onClick={addPeriod}>追加</Btn>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {periods.map(p=>(
+              <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", background:p.active?C.purple[50]:C.gray[50], borderRadius:8, border:p.active?`1px solid ${C.purple[200]}`:"none" }}>
+                <div style={{ flex:1, fontSize:13, color:C.gray[800], fontWeight:p.active?500:400 }}>{p.label}</div>
+                {p.active
+                  ? <Badge type="info">現在の期間</Badge>
+                  : <Btn small onClick={()=>setActivePeriod(p.id)}>アクティブにする</Btn>
+                }
+                {!p.active && <Btn small danger onClick={()=>removePeriod(p.id)}>削除</Btn>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+};
+
+// ── Manager Nav ────────────────────────────────────────────────
 const MANAGER_NAV = [
-  { id:"dashboard", label:"ダッシュボード", shortLabel:"ホーム", icon:"⊞" },
-  { id:"evaluation", label:"評価フォーム", shortLabel:"評価", icon:"✎" },
-  { id:"results", label:"結果・集計", shortLabel:"集計", icon:"▦" },
-  { id:"ai", label:"AI分析", shortLabel:"AI", icon:"✦" },
-  { id:"users", label:"メンバー管理", shortLabel:"管理", icon:"⚉" },
-  { id:"periods", label:"評価期間", shortLabel:"期間", icon:"◷" },
+  { id:"dashboard",  label:"ダッシュボード", shortLabel:"ホーム", icon:"⊞" },
+  { id:"evaluation", label:"評価フォーム",   shortLabel:"評価",  icon:"✎" },
+  { id:"results",    label:"結果・集計",     shortLabel:"集計",  icon:"▦" },
+  { id:"ai",         label:"AI分析",         shortLabel:"AI",    icon:"✦" },
+  { id:"users",      label:"メンバー管理",   shortLabel:"管理",  icon:"⚉" },
+  { id:"settings",   label:"設定",           shortLabel:"設定",  icon:"⚙" },
 ];
 
+// ── App ────────────────────────────────────────────────────────
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [managerAccount, setManagerAccount] = useState(MANAGER_ACCOUNT);
   const [page, setPage] = useState("dashboard");
   const [users, setUsers] = useState(SEED_USERS);
   const [evals, setEvals] = useState({});
   const [periods, setPeriods] = useState(PERIODS);
+  const [departments, setDepartments] = useState(DEPARTMENTS);
+  const [gradeDefs, setGradeDefs] = useState({...GRADE_DEFS});
   const [selectedUserId, setSelectedUserId] = useState(SEED_USERS[0].id);
 
   const activePeriod = periods.find(p=>p.active)||periods[0];
-  const handleLogin = user => { setCurrentUser(user); setPage("dashboard"); };
+
+  const handleLogin = user => {
+    // マネージャーアカウントは最新のmanagerAccountと照合
+    const allAccounts = [managerAccount, ...users];
+    const match = allAccounts.find(u=>u.email===user.email&&u.password===user.password);
+    if (match) { setCurrentUser(match); setPage("dashboard"); }
+    else setCurrentUser(user);
+  };
   const handleLogout = () => setCurrentUser(null);
 
-  if (!currentUser) return <LoginPage users={users} onLogin={handleLogin} />;
+  // LoginPageに最新のmanagerAccountを渡すためのログイン処理
+  const handleLoginAttempt = (email, password) => {
+    const allAccounts = [managerAccount, ...users];
+    return allAccounts.find(u=>u.email===email.trim()&&u.password===password)||null;
+  };
+
+  if (!currentUser) return <LoginPage users={users} managerAccount={managerAccount} onLogin={(user)=>{setCurrentUser(user);setPage("dashboard");}} />;
   if (currentUser.role==="member") return <EmployeeView currentUser={currentUser} evals={evals} setEvals={setEvals} periods={periods} onLogout={handleLogout} />;
 
-  const pageTitles = { dashboard:"ダッシュボード", evaluation:"評価フォーム", results:"結果・集計", ai:"AI分析", users:"メンバー管理", periods:"評価期間管理" };
+  const pageTitles = { dashboard:"ダッシュボード", evaluation:"評価フォーム", results:"結果・集計", ai:"AI分析", users:"メンバー管理", settings:"設定" };
 
   return (
     <AppShell nav={MANAGER_NAV} page={page} setPage={setPage} currentUser={currentUser} activePeriod={activePeriod} onLogout={handleLogout} pageTitle={pageTitles[page]}>
-      {page==="dashboard" && <Dashboard users={users} evals={evals} onNavigate={setPage} onSelectUser={setSelectedUserId} />}
+      {page==="dashboard"  && <Dashboard users={users} evals={evals} onNavigate={setPage} onSelectUser={setSelectedUserId} />}
       {page==="evaluation" && <EvaluationPage users={users} evals={evals} setEvals={setEvals} selectedUserId={selectedUserId} setSelectedUserId={setSelectedUserId} />}
-      {page==="results" && <ResultsPage users={users} evals={evals} />}
-      {page==="ai" && <AIPage users={users} evals={evals} />}
-      {page==="users" && <UserManagePage users={users} setUsers={setUsers} />}
-      {page==="periods" && <PeriodPage periods={periods} setPeriods={setPeriods} />}
+      {page==="results"    && <ResultsPage users={users} evals={evals} />}
+      {page==="ai"         && <AIPage users={users} evals={evals} />}
+      {page==="users"      && <UserManagePage users={users} setUsers={setUsers} />}
+      {page==="settings"   && (
+        <SettingsPage
+          currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
+          users={users}
+          setUsers={setUsers}
+          departments={departments}
+          setDepartments={setDepartments}
+          gradeDefs={gradeDefs}
+          setGradeDefs={setGradeDefs}
+          periods={periods}
+          setPeriods={setPeriods}
+          managerAccount={managerAccount}
+          setManagerAccount={setManagerAccount}
+        />
+      )}
     </AppShell>
   );
 }
