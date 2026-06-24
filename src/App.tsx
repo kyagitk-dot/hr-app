@@ -475,13 +475,29 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
   const save = async()=>{
     if(!form.name.trim())return;
     setSaving(true);
-    if(editingId){await onUpdateUser(editingId,{name:form.name,dept:form.dept,grade:form.grade});}
+   if(editingId){await onUpdateUser(editingId,{name:form.name,dept:form.dept,grade:form.grade,status:"approved"});}
     else{await onAddUser(form);}
     setSaving(false);setShowModal(false);
   };
   const remove = async id=>{if(window.confirm("削除しますか？"))await onDeleteUser(id);};
   return (
-    <div>
+    <div>{users.filter(u=>u.status==="pending").length>0&&(
+  <div style={{marginBottom:16}}>
+    <div style={{fontSize:13,fontWeight:500,color:C.coral[800],marginBottom:8,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>
+      承認待ち {users.filter(u=>u.status==="pending").length} 名
+    </div>
+    {users.filter(u=>u.status==="pending").map((u,i)=>(
+      <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.amber[50],borderRadius:8,marginBottom:6}}>
+        <Avatar name={u.name} idx={i} size={32}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div>
+          <div style={{fontSize:11,color:C.gray[400]}}>{u.email} · {u.dept} · {u.grade}</div>
+        </div>
+        <Btn small onClick={()=>openEdit(u)}>編集・承認</Btn>
+      </div>
+    ))}
+  </div>
+)}
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn primary onClick={openNew}>+ メンバーを追加</Btn></div>
       <Card>
         {users.map((u,i)=>(
