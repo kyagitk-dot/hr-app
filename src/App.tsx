@@ -981,16 +981,21 @@ const SettingsPage = ({ currentUser, setCurrentUser, users, setUsers, department
 
   // Account / Password
   const [newName, setNewName] = useState(currentUser.name);
+  const [newEmail, setNewEmail] = useState(currentUser.email);
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [pwError, setPwError] = useState("");
 
   const saveAccount = () => {
-    if (newName.trim()) {
-      setCurrentUser(prev=>({...prev, name:newName.trim()}));
-      setManagerAccount(prev=>({...prev, name:newName.trim()}));
-      showSaved("名前を更新しました");
+    if (!newName.trim()) return;
+    const emailChanged = newEmail.trim() !== currentUser.email;
+    const nameChanged = newName.trim() !== currentUser.name;
+    if (emailChanged && [...users].some(u=>u.email===newEmail.trim())) {
+      showSaved("そのメールアドレスはすでに使われています"); return;
     }
+    setCurrentUser(prev=>({...prev, name:newName.trim(), email:newEmail.trim()}));
+    setManagerAccount(prev=>({...prev, name:newName.trim(), email:newEmail.trim()}));
+    showSaved("アカウント情報を更新しました");
   };
   const savePassword = () => {
     setPwError("");
@@ -1000,6 +1005,26 @@ const SettingsPage = ({ currentUser, setCurrentUser, users, setUsers, department
     setCurrentUser(prev=>({...prev, password:newPw}));
     setOldPw(""); setNewPw("");
     showSaved("パスワードを変更しました");
+  };
+
+  // Bulk user creation
+  const [bulkText, setBulkText] = useState("");
+  const [bulkError, setBulkError] = useState("");
+  const parseBulk = () => {
+    setBulkError("");
+    const lines = bulkText.trim().split("\n").filter(l=>l.trim());
+    const newUsers = [];
+    for (const line of lines) {
+      const parts = line.split(/[,\t]/).map(s=>s.trim());
+      if (parts.length < 4) { setBulkError(`形式エラー：「${line}」\n形式：名前, メール, パスワード, 等級, 部署（任意）`); return; }
+      const [name, email, password, grade, dept] = parts;
+      if (!["G1","G2","G3","G4","G5"].includes(grade)) { setBulkError(`等級エラー：「${grade}」はG1〜G5のいずれかにしてください`); return; }
+      if ([...users, ...newUsers, managerAccount].some(u=>u.email===email)) { setBulkError(`メール重複：「${email}」はすでに登録されています`); return; }
+      newUsers.push({ id:"u"+Date.now()+Math.random(), name, email, password, grade, dept:dept||departments[0], role:"member", managerId:"u0" });
+    }
+    setUsers(prev=>[...prev, ...newUsers]);
+    setBulkText("");
+    showSaved(`${newUsers.length}名を追加しました`);
   };
 
   // Departments
@@ -1036,6 +1061,7 @@ const SettingsPage = ({ currentUser, setCurrentUser, users, setUsers, department
         {[
           { id:"account", label:"アカウント" },
           { id:"password", label:"パスワード" },
+          { id:"bulk", label:"社員一括登録" },
           { id:"departments", label:"部署" },
           { id:"grades", label:"等級定義" },
           { id:"periods", label:"評価期間" },
@@ -1050,12 +1076,12 @@ const SettingsPage = ({ currentUser, setCurrentUser, users, setUsers, department
           <CardTitle>アカウント情報</CardTitle>
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
             <div>
-              <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>メールアドレス</div>
-              <div style={{ fontSize:13, color:C.gray[600], padding:"9px 11px", background:C.gray[50], borderRadius:8 }}>{currentUser.email}</div>
-            </div>
-            <div>
               <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>表示名</div>
               <Input value={newName} onChange={setNewName} placeholder="名前" />
+            </div>
+            <div>
+              <div style={{ fontSize:12, color:C.gray[400], marginBottom:4 }}>メールアドレス</div>
+              <Input value={newEmail} onChange={setNewEmail} placeholder="your@example.com" type="email" />
             </div>
             <Btn primary onClick={saveAccount}>保存する</Btn>
           </div>
@@ -1079,6 +1105,49 @@ const SettingsPage = ({ currentUser, setCurrentUser, users, setUsers, department
             <Btn primary onClick={savePassword}>パスワードを変更する</Btn>
           </div>
         </Card>
+      )}
+
+      {/* Bulk user creation */}
+      {tab==="bulk" && (
+        <div>
+          <Card>
+            <CardTitle>社員一括登録</CardTitle>
+            <div style={{ fontSize:12, color:C.gray[400], marginBottom:10, lineHeight:1.8 }}>
+              1行に1名ずつ入力してください。<br/>
+              形式：<code style={{ background:C.gray[50], padding:"1px 6px", borderRadius:4 }}>名前, メール, パスワード, 等級, 部署（任意）</code><br/>
+              等級はG1〜G5のいずれかを入力してください。
+            </div>
+            <div style={{ background:C.purple[50], borderRadius:8, padding:"10px 14px", marginBottom:12, fontSize:12, color:C.purple[800] }}>
+              <strong>入力例：</strong><br/>
+              田中 太郎, tanaka@example.com, pass1234, G2, 営業1部<br/>
+              鈴木 花子, suzuki@example.com, pass5678, G3, 営業2部<br/>
+              佐藤 次郎, sato@example.com, pass9012, G1
+            </div>
+            <Textarea
+              rows={8}
+              value={bulkText}
+              onChange={setBulkText}
+              placeholder={"田中 太郎, tanaka@example.com, pass1234, G2, 営業1部\n鈴木 花子, suzuki@example.com, pass5678, G3"}
+            />
+            {bulkError && <div style={{ fontSize:12, color:C.coral[400], padding:"8px 12px", background:C.coral[50], borderRadius:8, marginTop:8, whiteSpace:"pre-wrap" }}>{bulkError}</div>}
+            <div style={{ marginTop:12 }}>
+              <Btn primary onClick={parseBulk}>登録する</Btn>
+            </div>
+          </Card>
+          <Card>
+            <CardTitle>登録済み社員一覧（{users.length}名）</CardTitle>
+            {users.map((u,i)=>(
+              <div key={u.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:i<users.length-1?`0.5px solid ${C.gray[50]}`:"none" }}>
+                <Avatar name={u.name} idx={i} size={28} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:C.gray[800] }}>{u.name}</div>
+                  <div style={{ fontSize:11, color:C.gray[400] }}>{u.email} · <span style={{ color:C.purple[600] }}>{u.grade}</span> · {u.dept}</div>
+                </div>
+                <div style={{ fontSize:11, color:C.gray[400] }}>PW: {u.password}</div>
+              </div>
+            ))}
+          </Card>
+        </div>
       )}
 
       {/* Departments */}
