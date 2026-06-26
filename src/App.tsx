@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { auth, db } from "./firebase";
 import {
   signInWithEmailAndPassword,
@@ -11,7 +11,7 @@ import {
 } from "firebase/auth";
 import {
   doc, getDoc, setDoc, updateDoc, collection,
-  getDocs, deleteDoc, onSnapshot,
+  deleteDoc, onSnapshot, collectionGroup,
 } from "firebase/firestore";
 
 const C = {
@@ -117,6 +117,34 @@ const DEPARTMENTS_DEFAULT = ["営業1部","営業2部","管理部","経営企画
 const GRADES = ["G1","G2","G3","G4","G5"];
 const PERIODS_DEFAULT = [{id:"2026H1",label:"2026年度 上半期",active:true}];
 
+// ── 販売実績 定数 ──────────────────────────────────────────────
+const CARRIERS_SALES = [
+  {id:"docomo",label:"docomo"},
+  {id:"au",label:"au"},
+  {id:"softbank",label:"SoftBank"},
+  {id:"ymobile",label:"ワイモバイル"},
+  {id:"uq",label:"UQモバイル"},
+  {id:"other",label:"その他格安SIM"},
+];
+const CARRIER_COLORS_S = {
+  docomo:"#e24b4a",au:"#ef9f27",softbank:"#ba7517",
+  ymobile:"#378add",uq:"#1d9e75",other:"#888780",
+};
+const SALES_FIELDS = [
+  {key:"newContract",label:"新規契約"},
+  {key:"deviceChange",label:"機種変更"},
+  {key:"mnpIn",label:"MNP転入"},
+  {key:"mnpOut",label:"MNP転出"},
+  {key:"netLine",label:"ネット回線"},
+  {key:"peripheral",label:"周辺機器"},
+  {key:"creditCard",label:"クレカ"},
+  {key:"energy",label:"電気・ガス"},
+];
+const toDateStr = (d) => d.toLocaleDateString("sv-SE");
+const todayStr = () => toDateStr(new Date());
+const salesTotal = (e) => SALES_FIELDS.reduce((s,f)=>s+(e[f.key]||0),0);
+const emptyEntry = (carrierId) => SALES_FIELDS.reduce((o,f)=>({...o,[f.key]:0}),{carrierId});
+
 const calcScore = (scores, grade) => {
   const criteria = GRADE_CRITERIA[grade]||[];
   let total = 0;
@@ -149,6 +177,12 @@ const SelectEl = ({value,onChange,options,style}) => <select value={value} onCha
 const Textarea = ({value,onChange,rows=3,placeholder}) => <textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} placeholder={placeholder} style={{width:"100%",padding:"9px 11px",fontSize:13,border:`0.5px solid ${C.gray[200]}`,borderRadius:8,background:"#fff",color:C.gray[800],resize:"vertical",fontFamily:"inherit",outline:"none",lineHeight:1.6,boxSizing:"border-box"}}/>;
 const Modal = ({title,onClose,children}) => <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}} onClick={e=>e.target===e.currentTarget&&onClose()}><div style={{background:"#fff",borderRadius:14,width:"100%",maxWidth:480,maxHeight:"90vh",overflow:"auto"}}><div style={{padding:"14px 18px",borderBottom:`0.5px solid ${C.gray[100]}`,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"#fff"}}><div style={{fontSize:15,fontWeight:500,color:C.gray[800]}}>{title}</div><button onClick={onClose} style={{border:"none",background:"none",fontSize:20,cursor:"pointer",color:C.gray[400]}}>×</button></div><div style={{padding:"16px 18px"}}>{children}</div></div></div>;
 const ScoreInput = ({value,onChange,readonly}) => <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>!readonly&&onChange&&onChange(value===n?0:n)} style={{width:32,height:32,borderRadius:6,border:"none",cursor:readonly?"default":"pointer",background:n<=value?C.purple[400]:C.gray[100],color:n<=value?"#fff":C.gray[400],fontSize:13,fontWeight:600,transition:"all 0.1s",fontFamily:"inherit"}}>{n}</button>)}</div>;
+
+const NumInput = ({value,onChange,disabled}) => (
+  <input type="number" min={0} value={value===0?"":value} placeholder="0" disabled={disabled}
+    onChange={e=>onChange(parseInt(e.target.value||"0",10))}
+    style={{width:"100%",height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,textAlign:"right",background:disabled?C.gray[50]:"#fff",color:C.gray[800],outline:"none",fontFamily:"inherit"}}/>
+);
 
 const BottomNav = ({nav,page,setPage}) => <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>{nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 4px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:page===n.id?C.purple[600]:C.gray[400]}}><span style={{fontSize:18}}>{n.icon}</span><span style={{fontSize:10,fontWeight:page===n.id?500:400}}>{n.shortLabel||n.label}</span></button>)}</div>;
 
@@ -192,23 +226,21 @@ const AppShell = ({nav,page,setPage,currentUser,activePeriod,onLogout,pageTitle,
 };
 
 const LoginPage = ({onLogin}) => {
-  const [tab, setTab] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [regName, setRegName] = useState("");
-  const [regDept, setRegDept] = useState(DEPARTMENTS_DEFAULT[0]);
-  const [regGrade, setRegGrade] = useState("G1");
+  const [tab,setTab] = useState("login");
+  const [email,setEmail] = useState("");
+  const [password,setPassword] = useState("");
+  const [showPw,setShowPw] = useState(false);
+  const [error,setError] = useState("");
+  const [loading,setLoading] = useState(false);
+  const [regName,setRegName] = useState("");
+  const [regDept,setRegDept] = useState(DEPARTMENTS_DEFAULT[0]);
+  const [regGrade,setRegGrade] = useState("G1");
 
   const handleLogin = async () => {
     setError(""); setLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-    } catch(e) {
-      setError("メールアドレスまたはパスワードが正しくありません。");
-    } finally { setLoading(false); }
+    try { await signInWithEmailAndPassword(auth,email.trim(),password); }
+    catch(e) { setError("メールアドレスまたはパスワードが正しくありません。"); }
+    finally { setLoading(false); }
   };
 
   const handleRegister = async () => {
@@ -216,10 +248,9 @@ const LoginPage = ({onLogin}) => {
     if(!email.trim()||!password){setError("メールアドレスとパスワードを入力してください");return;}
     setError(""); setLoading(true);
     try {
-      const { createUserWithEmailAndPassword } = await import("firebase/auth");
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const profile = {name:regName.trim(), email:email.trim(), role:"member", grade:regGrade, dept:regDept, status:"pending"};
-      await setDoc(doc(db,"users",cred.user.uid), profile);
+      const {createUserWithEmailAndPassword} = await import("firebase/auth");
+      const cred = await createUserWithEmailAndPassword(auth,email.trim(),password);
+      await setDoc(doc(db,"users",cred.user.uid),{name:regName.trim(),email:email.trim(),role:"member",grade:regGrade,dept:regDept,status:"pending"});
       await signOut(auth);
       alert("登録申請を送信しました。管理者の承認をお待ちください。");
     } catch(e) {
@@ -256,18 +287,9 @@ const LoginPage = ({onLogin}) => {
           </div>
           {tab==="register"&&(
             <div style={{marginBottom:18,display:"flex",flexDirection:"column",gap:12}}>
-              <div>
-                <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>名前</div>
-                <Input value={regName} onChange={setRegName} placeholder="例：山田 太郎"/>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>部署</div>
-                <SelectEl value={regDept} onChange={setRegDept} options={DEPARTMENTS_DEFAULT} style={{width:"100%"}}/>
-              </div>
-              <div>
-                <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>等級</div>
-                <SelectEl value={regGrade} onChange={setRegGrade} options={GRADES} style={{width:"100%"}}/>
-              </div>
+              <div><div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>名前</div><Input value={regName} onChange={setRegName} placeholder="例：山田 太郎"/></div>
+              <div><div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>部署</div><SelectEl value={regDept} onChange={setRegDept} options={DEPARTMENTS_DEFAULT} style={{width:"100%"}}/></div>
+              <div><div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>等級</div><SelectEl value={regGrade} onChange={setRegGrade} options={GRADES} style={{width:"100%"}}/></div>
             </div>
           )}
           {error&&<div style={{fontSize:12,color:C.coral[400],marginBottom:12,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>{error}</div>}
@@ -282,11 +304,7 @@ const LoginPage = ({onLogin}) => {
 
 const Dashboard = ({users,evals,onNavigate,onSelectUser}) => {
   const isMobile = useIsMobile();
-  const usersWithScore = users.map((u,i)=>{
-    const e=evals[u.id]||{};
-    const ms=calcScore(e.managerScores||{},u.grade);
-    return {...u,idx:i,managerScore:ms,rank:e.managerScores&&Object.keys(e.managerScores).length?calcRank(ms):null,status:e.status||"none"};
-  });
+  const usersWithScore = users.map((u,i)=>{const e=evals[u.id]||{};const ms=calcScore(e.managerScores||{},u.grade);return {...u,idx:i,managerScore:ms,rank:e.managerScores&&Object.keys(e.managerScores).length?calcRank(ms):null,status:e.status||"none"};});
   const done = usersWithScore.filter(u=>u.status==="done").length;
   const scored = usersWithScore.filter(u=>u.rank);
   const avgScore = scored.length?Math.round(scored.reduce((a,u)=>a+u.managerScore,0)/scored.length):null;
@@ -298,21 +316,13 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser}) => {
         <MetricCard label="チーム平均点" value={avgScore??"-"} sub="/ 100点" accent={avgScore>=80?C.teal:avgScore>=60?C.purple:avgScore?C.amber:null}/>
         <MetricCard label="評価期間" value="2026H1" sub="上半期"/>
       </div>
-      <Card>
-        <CardTitle>等級別構成</CardTitle>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {GRADES.map(g=>{const cnt=users.filter(u=>u.grade===g).length;if(!cnt)return null;return(<div key={g} style={{background:C.purple[50],borderRadius:8,padding:"6px 14px",textAlign:"center"}}><div style={{fontSize:18,fontWeight:700,color:C.purple[800]}}>{cnt}</div><div style={{fontSize:11,color:C.purple[600]}}>{g}</div></div>);})}
-        </div>
-      </Card>
+      <Card><CardTitle>等級別構成</CardTitle><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{GRADES.map(g=>{const cnt=users.filter(u=>u.grade===g).length;if(!cnt)return null;return(<div key={g} style={{background:C.purple[50],borderRadius:8,padding:"6px 14px",textAlign:"center"}}><div style={{fontSize:18,fontWeight:700,color:C.purple[800]}}>{cnt}</div><div style={{fontSize:11,color:C.purple[600]}}>{g}</div></div>);})}</div></Card>
       <Card>
         <CardTitle action={<Btn small primary onClick={()=>onNavigate("evaluation")}>+ 評価を入力</Btn>}>メンバー一覧</CardTitle>
         {usersWithScore.map((u,i)=>(
           <div key={u.id} onClick={()=>{onSelectUser(u.id);onNavigate("evaluation");}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 6px",borderRadius:8,cursor:"pointer",borderBottom:i<users.length-1?`0.5px solid ${C.gray[50]}`:"none"}} onMouseEnter={e=>e.currentTarget.style.background=C.gray[50]} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
             <Avatar name={u.name} idx={u.idx} size={34}/>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:500,color:C.gray[800],whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name}</div>
-              <div style={{fontSize:11,color:C.gray[400]}}>{u.dept} · <span style={{color:C.purple[600],fontWeight:500}}>{u.grade}</span></div>
-            </div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:500,color:C.gray[800],whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name}</div><div style={{fontSize:11,color:C.gray[400]}}>{u.dept} · <span style={{color:C.purple[600],fontWeight:500}}>{u.grade}</span></div></div>
             {u.rank&&<div style={{display:"flex",alignItems:"center",gap:6}}>{!isMobile&&<ScoreBar score={u.managerScore}/>}<span style={{fontSize:14,fontWeight:600,color:C.gray[800],minWidth:36,textAlign:"right"}}>{u.managerScore}点</span><RankBadge rank={u.rank}/></div>}
             {!u.rank&&<Badge type={u.status==="done"?"done":"none"}>{u.status==="done"?"完了":"未評価"}</Badge>}
           </div>
@@ -334,13 +344,7 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
   const totalScore = calcScore(scores,user?.grade);
   const rank = Object.keys(scores).length?calcRank(totalScore):null;
   const categoryGroups = criteria.reduce((acc,c)=>{if(!acc[c.category])acc[c.category]=[];acc[c.category].push(c);return acc;},{});
-
-  const updateField = async (key,value) => {
-    setSaving(true);
-    await onSaveEval(user.id,{[key]:value});
-    setSaving(false);
-  };
-
+  const updateField = async (key,value) => { setSaving(true); await onSaveEval(user.id,{[key]:value}); setSaving(false); };
   return (
     <div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
@@ -348,9 +352,7 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
         {saving&&<span style={{fontSize:12,color:C.gray[400]}}>保存中...</span>}
         <Btn small primary onClick={()=>updateField("status","done")} disabled={eval_.status==="done"}>提出する</Btn>
       </div>
-      <div style={{background:C.purple[50],border:`1px solid ${C.purple[200]}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.purple[800]}}>
-        <strong>{user?.grade}</strong> — {gradeDefs[user?.grade]}
-      </div>
+      <div style={{background:C.purple[50],border:`1px solid ${C.purple[200]}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.purple[800]}}><strong>{user?.grade}</strong> — {gradeDefs[user?.grade]}</div>
       <div style={{display:"flex",gap:6,background:C.gray[50],borderRadius:10,padding:4,marginBottom:14,width:"fit-content"}}>
         {["manager","self"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"7px 18px",fontSize:13,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t?C.purple[50]:"transparent",color:tab===t?C.purple[800]:C.gray[400],fontWeight:tab===t?500:400}}>{t==="manager"?"上司評価":"自己評価"}</button>)}
       </div>
@@ -361,8 +363,7 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
           <Card key={cat}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:cc[50],color:cc[800],fontWeight:500}}>{cat}</span><span style={{fontSize:11,color:C.gray[400]}}>配点 {items.reduce((a,c)=>a+c.points,0)}点</span></div>
             {items.map((c,i)=>{
-              const sc=scores[c.no]||0;
-              const itemScore=sc>0?Math.round((c.points*sc)/5):0;
+              const sc=scores[c.no]||0;const itemScore=sc>0?Math.round((c.points*sc)/5):0;
               return (
                 <div key={c.no} style={{marginBottom:i<items.length-1?16:0,paddingBottom:i<items.length-1?16:0,borderBottom:i<items.length-1?`0.5px solid ${C.gray[50]}`:"none"}}>
                   <div style={{display:"flex",alignItems:"start",justifyContent:"space-between",marginBottom:8,gap:8}}>
@@ -376,16 +377,8 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
           </Card>
         );
       })}
-      <Card>
-        <CardTitle>昇格判定補助欄</CardTitle>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
-          {[{key:"nextGrade",label:"次等級候補",placeholder:"例：G4候補"},{key:"requirements",label:"必須条件充足状況",placeholder:"充足 / 一部未充足 / 未充足"},{key:"nextRoleAdvance",label:"次等級期待役割の先取り",placeholder:"先取りあり / なし"},{key:"compliance",label:"コンプライアンス重大違反",placeholder:"なし / あり（詳細）"},{key:"promotion",label:"昇格推薦可否",placeholder:"推薦 / 見送り / 条件付き推薦"}].map(f=><div key={f.key}><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>{f.label}</div><Input value={eval_[f.key]||""} onChange={v=>updateField(f.key,v)} placeholder={f.placeholder}/></div>)}
-        </div>
-      </Card>
-      <Card>
-        <CardTitle>総合コメント・育成計画</CardTitle>
-        {[{key:"strengths",label:"強み"},{key:"improvements",label:"次期の改善課題"},{key:"devTheme",label:"次期育成テーマ"},{key:"managerSupport",label:"上司支援事項"},{key:"secondaryComment",label:"二次評価者コメント"}].map(f=><div key={f.key} style={{marginBottom:10}}><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>{f.label}</div><Textarea value={eval_[f.key]||""} onChange={v=>updateField(f.key,v)} rows={2} placeholder={f.label}/></div>)}
-      </Card>
+      <Card><CardTitle>昇格判定補助欄</CardTitle><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>{[{key:"nextGrade",label:"次等級候補",placeholder:"例：G4候補"},{key:"requirements",label:"必須条件充足状況",placeholder:"充足 / 一部未充足 / 未充足"},{key:"nextRoleAdvance",label:"次等級期待役割の先取り",placeholder:"先取りあり / なし"},{key:"compliance",label:"コンプライアンス重大違反",placeholder:"なし / あり（詳細）"},{key:"promotion",label:"昇格推薦可否",placeholder:"推薦 / 見送り / 条件付き推薦"}].map(f=><div key={f.key}><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>{f.label}</div><Input value={eval_[f.key]||""} onChange={v=>updateField(f.key,v)} placeholder={f.placeholder}/></div>)}</div></Card>
+      <Card><CardTitle>総合コメント・育成計画</CardTitle>{[{key:"strengths",label:"強み"},{key:"improvements",label:"次期の改善課題"},{key:"devTheme",label:"次期育成テーマ"},{key:"managerSupport",label:"上司支援事項"},{key:"secondaryComment",label:"二次評価者コメント"}].map(f=><div key={f.key} style={{marginBottom:10}}><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>{f.label}</div><Textarea value={eval_[f.key]||""} onChange={v=>updateField(f.key,v)} rows={2} placeholder={f.label}/></div>)}</Card>
     </div>
   );
 };
@@ -403,24 +396,10 @@ const ResultsPage = ({users,evals}) => {
         <MetricCard label="チーム平均点" value={scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length):"-"} sub="/ 100点"/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-        <Card>
-          <CardTitle>ランク別分布</CardTitle>
-          {rankCounts.map(r=>{const c=rankColor(r.rank);return(<div key={r.rank} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><RankBadge rank={r.rank}/><div style={{flex:1,height:6,background:C.gray[100],borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${users.length?r.count/users.length*100:0}%`,background:c[400],borderRadius:3}}/></div><span style={{fontSize:13,fontWeight:500,color:C.gray[800],minWidth:20}}>{r.count}名</span></div>);})}
-        </Card>
-        <Card>
-          <CardTitle>等級別 平均点</CardTitle>
-          {gradeAvgs.filter(g=>g.count>0).map(g=><div key={g.grade} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><span style={{fontSize:12,color:C.purple[600],fontWeight:600,width:24}}>{g.grade}</span><div style={{flex:1,height:6,background:C.gray[100],borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${g.avg}%`,background:C.purple[400],borderRadius:3}}/></div><span style={{fontSize:13,fontWeight:500,color:C.gray[800],minWidth:44}}>{g.avg}点</span></div>)}
-        </Card>
+        <Card><CardTitle>ランク別分布</CardTitle>{rankCounts.map(r=>{const c=rankColor(r.rank);return(<div key={r.rank} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><RankBadge rank={r.rank}/><div style={{flex:1,height:6,background:C.gray[100],borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${users.length?r.count/users.length*100:0}%`,background:c[400],borderRadius:3}}/></div><span style={{fontSize:13,fontWeight:500,color:C.gray[800],minWidth:20}}>{r.count}名</span></div>);})}</Card>
+        <Card><CardTitle>等級別 平均点</CardTitle>{gradeAvgs.filter(g=>g.count>0).map(g=><div key={g.grade} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><span style={{fontSize:12,color:C.purple[600],fontWeight:600,width:24}}>{g.grade}</span><div style={{flex:1,height:6,background:C.gray[100],borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${g.avg}%`,background:C.purple[400],borderRadius:3}}/></div><span style={{fontSize:13,fontWeight:500,color:C.gray[800],minWidth:44}}>{g.avg}点</span></div>)}</Card>
       </div>
-      <Card>
-        <CardTitle>メンバー別スコア一覧</CardTitle>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["名前","等級","上司評価点","自己評価点","ランク","状態"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-            <tbody>{rows.map(u=><tr key={u.id} style={{borderBottom:`0.5px solid ${C.gray[50]}`}}><td style={{padding:"8px",color:C.gray[800],fontWeight:500}}><div style={{display:"flex",alignItems:"center",gap:8}}><Avatar name={u.name} idx={u.idx} size={24}/>{u.name}</div></td><td style={{padding:"8px"}}><span style={{color:C.purple[600],fontWeight:600}}>{u.grade}</span></td><td style={{padding:"8px",fontWeight:500,color:C.gray[800]}}>{u.ms!==null?`${u.ms}点`:"-"}</td><td style={{padding:"8px",color:C.gray[600]}}>{u.ss!==null?`${u.ss}点`:"-"}</td><td style={{padding:"8px"}}><RankBadge rank={u.rank}/></td><td style={{padding:"8px"}}><Badge type={evals[u.id]?.status==="done"?"done":u.ms!==null?"wip":"none"}>{evals[u.id]?.status==="done"?"完了":u.ms!==null?"入力中":"未"}</Badge></td></tr>)}</tbody>
-          </table>
-        </div>
-      </Card>
+      <Card><CardTitle>メンバー別スコア一覧</CardTitle><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["名前","等級","上司評価点","自己評価点","ランク","状態"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>{rows.map(u=><tr key={u.id} style={{borderBottom:`0.5px solid ${C.gray[50]}`}}><td style={{padding:"8px",color:C.gray[800],fontWeight:500}}><div style={{display:"flex",alignItems:"center",gap:8}}><Avatar name={u.name} idx={u.idx} size={24}/>{u.name}</div></td><td style={{padding:"8px"}}><span style={{color:C.purple[600],fontWeight:600}}>{u.grade}</span></td><td style={{padding:"8px",fontWeight:500,color:C.gray[800]}}>{u.ms!==null?`${u.ms}点`:"-"}</td><td style={{padding:"8px",color:C.gray[600]}}>{u.ss!==null?`${u.ss}点`:"-"}</td><td style={{padding:"8px"}}><RankBadge rank={u.rank}/></td><td style={{padding:"8px"}}><Badge type={evals[u.id]?.status==="done"?"done":u.ms!==null?"wip":"none"}>{evals[u.id]?.status==="done"?"完了":u.ms!==null?"入力中":"未"}</Badge></td></tr>)}</tbody></table></div></Card>
     </div>
   );
 };
@@ -470,16 +449,11 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
     <div>
       {users.filter(u=>u.status==="pending").length>0&&(
         <div style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:500,color:C.coral[800],marginBottom:8,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>
-            承認待ち {users.filter(u=>u.status==="pending").length} 名
-          </div>
+          <div style={{fontSize:13,fontWeight:500,color:C.coral[800],marginBottom:8,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>承認待ち {users.filter(u=>u.status==="pending").length} 名</div>
           {users.filter(u=>u.status==="pending").map((u,i)=>(
             <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.amber[50],borderRadius:8,marginBottom:6}}>
               <Avatar name={u.name} idx={i} size={32}/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div>
-                <div style={{fontSize:11,color:C.gray[400]}}>{u.email} · {u.dept} · {u.grade}</div>
-              </div>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div><div style={{fontSize:11,color:C.gray[400]}}>{u.email} · {u.dept} · {u.grade}</div></div>
               <Btn small onClick={()=>openEdit(u)}>編集・承認</Btn>
             </div>
           ))}
@@ -520,32 +494,15 @@ const SettingsPage = ({currentUser,departments,setDepartments,gradeDefs,setGrade
   const [newDept,setNewDept] = useState("");
   const [localGradeDefs,setLocalGradeDefs] = useState({...gradeDefs});
   const [newPeriodLabel,setNewPeriodLabel] = useState("");
-
-  const saveAccount = async()=>{
-    try{
-      if(newEmail!==currentUser.email)await updateEmail(auth.currentUser,newEmail.trim());
-      showSaved("アカウント情報を更新しました");
-    }catch(e){showSaved("エラー："+e.message);}
-  };
-  const savePassword = async()=>{
-    setPwError("");
-    if(newPw.length<6){setPwError("6文字以上必要です");return;}
-    try{
-      const cred=EmailAuthProvider.credential(currentUser.email,oldPw);
-      await reauthenticateWithCredential(auth.currentUser,cred);
-      await updatePassword(auth.currentUser,newPw);
-      setOldPw("");setNewPw("");showSaved("パスワードを変更しました");
-    }catch(e){setPwError("現在のパスワードが正しくありません");}
-  };
+  const saveAccount = async()=>{ try{ if(newEmail!==currentUser.email)await updateEmail(auth.currentUser,newEmail.trim()); showSaved("アカウント情報を更新しました"); }catch(e){showSaved("エラー："+e.message);} };
+  const savePassword = async()=>{ setPwError(""); if(newPw.length<6){setPwError("6文字以上必要です");return;} try{ const cred=EmailAuthProvider.credential(currentUser.email,oldPw); await reauthenticateWithCredential(auth.currentUser,cred); await updatePassword(auth.currentUser,newPw); setOldPw("");setNewPw("");showSaved("パスワードを変更しました"); }catch(e){setPwError("現在のパスワードが正しくありません");} };
   const addDept = ()=>{if(newDept.trim()&&!departments.includes(newDept.trim())){const d=[...departments,newDept.trim()];setDepartments(d);onSaveSettings({departments:d});setNewDept("");showSaved("部署を追加しました");}};
   const removeDept = d=>{const nd=departments.filter(x=>x!==d);setDepartments(nd);onSaveSettings({departments:nd});};
   const saveGradeDefs = ()=>{setGradeDefs({...localGradeDefs});onSaveSettings({gradeDefs:localGradeDefs});showSaved("等級定義を保存しました");};
   const addPeriod = ()=>{if(!newPeriodLabel.trim())return;const np=[...periods,{id:"p"+Date.now(),label:newPeriodLabel.trim(),active:false}];setPeriods(np);onSaveSettings({periods:np});setNewPeriodLabel("");showSaved("評価期間を追加しました");};
   const removePeriod = id=>{const np=periods.filter(p=>p.id!==id);setPeriods(np);onSaveSettings({periods:np});};
   const setActivePeriod = id=>{const np=periods.map(p=>({...p,active:p.id===id}));setPeriods(np);onSaveSettings({periods:np});showSaved("アクティブ期間を変更しました");};
-
   const tabStyle = t=>({padding:"8px 16px",fontSize:13,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t?C.purple[50]:"transparent",color:tab===t?C.purple[800]:C.gray[600],fontWeight:tab===t?500:400});
-
   return (
     <div>
       {saved&&<div style={{background:C.green[50],border:`1px solid ${C.green[400]}`,borderRadius:8,padding:"8px 14px",marginBottom:12,fontSize:13,color:C.green[800]}}>✓ {saved}</div>}
@@ -561,7 +518,287 @@ const SettingsPage = ({currentUser,departments,setDepartments,gradeDefs,setGrade
   );
 };
 
-const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,gradeDefs}) => {
+// ── 販売実績 入力フォーム ──────────────────────────────────────
+const SalesInputForm = ({uid, displayName}) => {
+  const [date,setDate] = useState(todayStr());
+  const [agency,setAgency] = useState("");
+  const [storeName,setStoreName] = useState("");
+  const [carrierId,setCarrierId] = useState("docomo");
+  const [entries,setEntries] = useState(CARRIERS_SALES.map(c=>emptyEntry(c.id)));
+  const [saving,setSaving] = useState(false);
+  const [savedAt,setSavedAt] = useState(null);
+  const [loading,setLoading] = useState(true);
+
+  useEffect(()=>{
+    if(!uid)return;
+    setLoading(true);
+    getDoc(doc(db,"salesReports",uid,"daily",date)).then(snap=>{
+      if(snap.exists()){
+        const d=snap.data();
+        setAgency(d.agency||"");setStoreName(d.storeName||"");
+        const merged=CARRIERS_SALES.map(c=>{const found=(d.entries||[]).find(e=>e.carrierId===c.id);return found||emptyEntry(c.id);});
+        setEntries(merged);setSavedAt(d.updatedAt?.toDate?.()||null);
+      } else {
+        setAgency("");setStoreName("");setEntries(CARRIERS_SALES.map(c=>emptyEntry(c.id)));setSavedAt(null);
+      }
+    }).finally(()=>setLoading(false));
+  },[uid,date]);
+
+  const updateEntry = (cId,field,val) => setEntries(prev=>prev.map(e=>e.carrierId===cId?{...e,[field]:Math.max(0,val)}:e));
+  const save = async()=>{
+    setSaving(true);
+    const ref=doc(db,"salesReports",uid,"daily",date);
+    const snap=await getDoc(ref);
+    await setDoc(ref,{uid,displayName,date,agency,storeName,entries,createdAt:snap.exists()?snap.data().createdAt:new Date(),updatedAt:new Date()});
+    setSavedAt(new Date());setSaving(false);
+  };
+  const current=entries.find(e=>e.carrierId===carrierId)||emptyEntry(carrierId);
+  const isToday=date===todayStr();
+
+  if(loading)return <div style={{padding:"2rem",textAlign:"center",color:C.gray[400],fontSize:13}}>読み込み中...</div>;
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:15,fontWeight:500,color:C.gray[800]}}>日次販売報告</div>
+          {savedAt&&<div style={{fontSize:11,color:C.gray[400],marginTop:2}}>保存済 {savedAt.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}</div>}
+        </div>
+        <button onClick={save} disabled={saving||!isToday} style={{padding:"8px 20px",background:isToday?C.purple[400]:C.gray[200],color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:500,cursor:isToday?"pointer":"default",fontFamily:"inherit"}}>
+          {saving?"保存中...":"保存"}
+        </button>
+      </div>
+      {!isToday&&<div style={{padding:"8px 12px",background:C.amber[50],borderRadius:8,fontSize:12,color:C.amber[800],marginBottom:12}}>過去日の報告は閲覧のみです</div>}
+      <Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          <div>
+            <div style={{fontSize:11,color:C.gray[400],marginBottom:4}}>日付</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:"#fff",fontFamily:"inherit"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.gray[400],marginBottom:4}}>代理店名</div>
+            <input value={agency} onChange={e=>setAgency(e.target.value)} placeholder="例：〇〇エージェント" disabled={!isToday} style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:isToday?"#fff":C.gray[50],fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.gray[400],marginBottom:4}}>店舗名</div>
+            <input value={storeName} onChange={e=>setStoreName(e.target.value)} placeholder="例：△△店" disabled={!isToday} style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:isToday?"#fff":C.gray[50],fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+        </div>
+      </Card>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+        {CARRIERS_SALES.map(c=>{
+          const entry=entries.find(e=>e.carrierId===c.id)||emptyEntry(c.id);
+          const total=salesTotal(entry);const selected=carrierId===c.id;
+          return(
+            <button key={c.id} onClick={()=>setCarrierId(c.id)} style={{padding:"6px 12px",borderRadius:20,fontSize:12,fontFamily:"inherit",border:selected?`1.5px solid ${CARRIER_COLORS_S[c.id]}`:`0.5px solid ${C.gray[200]}`,background:selected?CARRIER_COLORS_S[c.id]+"18":"#fff",color:selected?CARRIER_COLORS_S[c.id]:C.gray[600],fontWeight:selected?500:400,cursor:"pointer"}}>
+              {c.label}{total>0&&<span style={{marginLeft:5,fontWeight:600}}>{total}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <Card>
+        <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>モバイル</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {SALES_FIELDS.slice(0,4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+        </div>
+        <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>付帯商材</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {SALES_FIELDS.slice(4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+        </div>
+      </Card>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+        {["newContract","deviceChange","mnpIn","mnpOut"].map((k,i)=>{
+          const labels=["新規","機変","MNP転入","MNP転出"];
+          const total=entries.reduce((s,e)=>s+(e[k]||0),0);
+          return(<div key={k} style={{background:C.gray[50],borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:C.gray[400],marginBottom:2}}>{labels[i]}</div><div style={{fontSize:20,fontWeight:600,color:C.gray[800]}}>{total}</div></div>);
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── 販売実績 自分の実績 ───────────────────────────────────────
+const SalesMemberStats = ({uid, allReports}) => {
+  const [period,setPeriod] = useState("month");
+  const now = new Date();
+  const myReports = allReports.filter(r=>r.uid===uid);
+  const filtered = myReports.filter(r=>{
+    const d=new Date(r.date);
+    if(period==="week"){const w=new Date();w.setDate(w.getDate()-7);return d>=w;}
+    return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
+  });
+  const dailyTotals = filtered.map(r=>({date:r.date.slice(5),total:(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0)})).sort((a,b)=>a.date.localeCompare(b.date));
+  const monthTotal = filtered.reduce((s,r)=>s+(r.entries||[]).reduce((s2,e)=>s2+salesTotal(e),0),0);
+  const ranking = Object.entries(allReports.reduce((acc,r)=>{
+    const d=new Date(r.date);if(d.getFullYear()!==now.getFullYear()||d.getMonth()!==now.getMonth())return acc;
+    if(!acc[r.uid])acc[r.uid]={uid:r.uid,name:r.displayName,total:0};
+    acc[r.uid].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);return acc;
+  },{})).map(([,v])=>v).sort((a,b)=>b.total-a.total);
+  const myRank=ranking.findIndex(r=>r.uid===uid)+1;
+  const maxBar=ranking[0]?.total||1;
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[{id:"week",label:"直近7日"},{id:"month",label:"今月"}].map(p=>(
+          <button key={p.id} onClick={()=>setPeriod(p.id)} style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontFamily:"inherit",border:period===p.id?`1.5px solid ${C.purple[400]}`:`0.5px solid ${C.gray[200]}`,background:period===p.id?C.purple[50]:"#fff",color:period===p.id?C.purple[800]:C.gray[600],cursor:"pointer"}}>{p.label}</button>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+        <div style={{background:C.purple[50],borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:C.purple[600],marginBottom:3}}>合計件数</div><div style={{fontSize:24,fontWeight:600,color:C.purple[800]}}>{monthTotal}</div></div>
+        <div style={{background:C.teal[50],borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:C.teal[800],marginBottom:3}}>稼働日数</div><div style={{fontSize:24,fontWeight:600,color:C.teal[800]}}>{filtered.length}日</div></div>
+        <div style={{background:C.amber[50],borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:C.amber[800],marginBottom:3}}>今月順位</div><div style={{fontSize:24,fontWeight:600,color:C.amber[800]}}>{myRank>0?`${myRank}位`:"-"}</div></div>
+      </div>
+      <Card>
+        <CardTitle>日別件数</CardTitle>
+        {dailyTotals.length===0?(
+          <div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>
+        ):(
+          <div style={{display:"flex",alignItems:"flex-end",gap:4,height:80,overflowX:"auto"}}>
+            {dailyTotals.map(d=>{
+                      const maxVal=Math.max(...dailyTotals.map(x=>x.total),1);
+              const h=Math.max((d.total/maxVal)*70,4);
+              return(
+                <div key={d.date} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,minWidth:28}}>
+                  <div style={{fontSize:9,color:C.gray[400]}}>{d.total}</div>
+                  <div style={{width:20,height:h,background:C.purple[400],borderRadius:"3px 3px 0 0"}}/>
+                  <div style={{fontSize:9,color:C.gray[400],writingMode:"vertical-rl",transform:"rotate(180deg)"}}>{d.date}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+      <Card>
+        <CardTitle>今月ランキング</CardTitle>
+        {ranking.slice(0,10).map((r,i)=>(
+          <div key={r.uid} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,background:r.uid===uid?C.purple[50]:"transparent",borderRadius:8,padding:"6px 8px"}}>
+            <div style={{width:22,height:22,borderRadius:"50%",flexShrink:0,background:i===0?"#fbbf24":i===1?"#9ca3af":i===2?"#cd7c2f":C.gray[100],display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:i<3?"#fff":C.gray[600]}}>{i+1}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:r.uid===uid?600:400,color:C.gray[800]}}>{r.name}{r.uid===uid&&" (自分)"}</div>
+              <div style={{height:4,background:C.gray[100],borderRadius:2,marginTop:3}}><div style={{height:"100%",width:`${(r.total/maxBar)*100}%`,background:C.purple[400],borderRadius:2}}/></div>
+            </div>
+            <div style={{fontSize:13,fontWeight:600,color:C.gray[800],minWidth:36,textAlign:"right"}}>{r.total}</div>
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+};
+
+// ── 販売実績 管理者ダッシュボード ─────────────────────────────
+const SalesManagerDash = ({allReports}) => {
+  const [tab,setTab] = useState("daily");
+  const [filterAgency,setFilterAgency] = useState("");
+  const [filterStore,setFilterStore] = useState("");
+  const [filterCarrier,setFilterCarrier] = useState("all");
+  const now = new Date();
+  const thisMonth = allReports.filter(r=>{const d=new Date(r.date);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
+  const filtered = thisMonth.filter(r=>(!filterAgency||(r.agency||"").includes(filterAgency))&&(!filterStore||(r.storeName||"").includes(filterStore)));
+  const dailyRows = filtered.flatMap(r=>(r.entries||[]).filter(e=>filterCarrier==="all"||e.carrierId===filterCarrier).map(e=>({date:r.date,name:r.displayName,agency:r.agency,store:r.storeName,carrier:e.carrierId,...e}))).sort((a,b)=>b.date.localeCompare(a.date));
+  const carrierTotals = CARRIERS_SALES.map(c=>{const rows=filtered.flatMap(r=>(r.entries||[]).filter(e=>e.carrierId===c.id));return{carrier:c.label,total:rows.reduce((s,e)=>s+salesTotal(e),0),color:CARRIER_COLORS_S[c.id]};}).sort((a,b)=>b.total-a.total);
+  const agencyTotals = Object.entries(filtered.reduce((acc,r)=>{const key=`${r.agency||"未入力"}__${r.storeName||"未入力"}`;if(!acc[key])acc[key]={agency:r.agency||"未入力",store:r.storeName||"未入力",total:0};acc[key].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);return acc;},{})).map(([,v])=>v).sort((a,b)=>b.total-a.total);
+  const memberRanking = Object.entries(filtered.reduce((acc,r)=>{if(!acc[r.uid])acc[r.uid]={name:r.displayName,total:0,days:new Set()};acc[r.uid].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);acc[r.uid].days.add(r.date);return acc;},{})).map(([uid,v])=>({uid,...v,days:v.days.size})).sort((a,b)=>b.total-a.total);
+  const maxMember=memberRanking[0]?.total||1;
+  const tabStyle=t=>({padding:"7px 14px",fontSize:12,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t?C.purple[50]:"transparent",color:tab===t?C.purple[800]:C.gray[600],fontWeight:tab===t?500:400});
+  return (
+    <div>
+      <Card>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <input value={filterAgency} onChange={e=>setFilterAgency(e.target.value)} placeholder="代理店で絞り込み" style={{flex:1,minWidth:120,height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}/>
+          <input value={filterStore} onChange={e=>setFilterStore(e.target.value)} placeholder="店舗で絞り込み" style={{flex:1,minWidth:120,height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}/>
+          <select value={filterCarrier} onChange={e=>setFilterCarrier(e.target.value)} style={{height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}>
+            <option value="all">全キャリア</option>
+            {CARRIERS_SALES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+      </Card>
+      <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:10,padding:4,marginBottom:14,flexWrap:"wrap"}}>
+        {[{id:"daily",label:"日別一覧"},{id:"carrier",label:"キャリア別"},{id:"agency",label:"代理店・店舗別"},{id:"ranking",label:"メンバー別"}].map(t=><button key={t.id} style={tabStyle(t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}
+      </div>
+      {tab==="daily"&&(
+        <Card>
+          <CardTitle>日別一覧（今月）</CardTitle>
+          {dailyRows.length===0?<div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>:(
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","MNP転出","ネット","機器","CC","電気/G","計"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <tbody>{dailyRows.map((r,i)=>(
+                  <tr key={i} style={{borderBottom:`0.5px solid ${C.gray[50]}`}}>
+                    <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{r.date}</td>
+                    <td style={{padding:"6px 8px",fontWeight:500,color:C.gray[800]}}>{r.name}</td>
+                    <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.agency||"-"}</td>
+                    <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.store||"-"}</td>
+                    <td style={{padding:"6px 8px"}}><span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:CARRIER_COLORS_S[r.carrier]+"20",color:CARRIER_COLORS_S[r.carrier],fontWeight:500}}>{CARRIERS_SALES.find(c=>c.id===r.carrier)?.label}</span></td>
+                    {["newContract","deviceChange","mnpIn","mnpOut","netLine","peripheral","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
+                    <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.purple[800]}}>{salesTotal(r)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+      {tab==="carrier"&&(
+        <Card>
+          <CardTitle>キャリア別集計（今月）</CardTitle>
+          {carrierTotals.map(c=>(
+            <div key={c.carrier} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:80,fontSize:12,color:C.gray[800],fontWeight:500,flexShrink:0}}>{c.carrier}</div>
+              <div style={{flex:1,height:8,background:C.gray[100],borderRadius:4}}><div style={{height:"100%",width:`${carrierTotals[0]?.total?(c.total/carrierTotals[0].total)*100:0}%`,background:c.color,borderRadius:4}}/></div>
+              <div style={{fontSize:14,fontWeight:600,color:C.gray[800],minWidth:40,textAlign:"right"}}>{c.total}</div>
+            </div>
+          ))}
+        </Card>
+      )}
+      {tab==="agency"&&(
+        <Card>
+          <CardTitle>代理店・店舗別集計（今月）</CardTitle>
+          {agencyTotals.length===0?<div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>:agencyTotals.map((a,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:C.gray[800]}}>{a.agency}</div><div style={{fontSize:11,color:C.gray[400]}}>{a.store}</div></div>
+              <div style={{flex:1,height:6,background:C.gray[100],borderRadius:3}}><div style={{height:"100%",width:`${agencyTotals[0]?.total?(a.total/agencyTotals[0].total)*100:0}%`,background:C.teal[400],borderRadius:3}}/></div>
+              <div style={{fontSize:14,fontWeight:600,color:C.gray[800],minWidth:36,textAlign:"right"}}>{a.total}</div>
+            </div>
+          ))}
+        </Card>
+      )}
+      {tab==="ranking"&&(
+        <Card>
+          <CardTitle>メンバー別ランキング（今月）</CardTitle>
+          {memberRanking.map((r,i)=>(
+            <div key={r.uid} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:22,height:22,borderRadius:"50%",flexShrink:0,background:i===0?"#fbbf24":i===1?"#9ca3af":i===2?"#cd7c2f":C.gray[100],display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:i<3?"#fff":C.gray[600]}}>{i+1}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:500,color:C.gray[800]}}>{r.name}</div>
+                <div style={{height:5,background:C.gray[100],borderRadius:3,marginTop:3}}><div style={{height:"100%",width:`${(r.total/maxMember)*100}%`,background:C.purple[400],borderRadius:3}}/></div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:14,fontWeight:600,color:C.gray[800]}}>{r.total}件</div><div style={{fontSize:10,color:C.gray[400]}}>{r.days}日稼働</div></div>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+};
+
+const SalesPage = ({currentUser, userProfile, isManager, allReports}) => {
+  const [tab,setTab] = useState("input");
+  const tabs = isManager
+    ?[{id:"input",label:"日次入力"},{id:"mystats",label:"自分の実績"},{id:"dashboard",label:"管理ダッシュボード"}]
+    :[{id:"input",label:"日次入力"},{id:"mystats",label:"自分の実績"}];
+  const tabStyle = t=>({padding:"7px 16px",fontSize:13,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t?C.purple[400]:"transparent",color:tab===t?"#fff":C.gray[600],fontWeight:tab===t?500:400});
+  return (
+    <div>
+      <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:10,padding:4,marginBottom:16}}>
+        {tabs.map(t=><button key={t.id} style={tabStyle(t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}
+      </div>
+      {tab==="input"&&<SalesInputForm uid={currentUser.uid} displayName={userProfile?.name||currentUser.email}/>}
+      {tab==="mystats"&&<SalesMemberStats uid={currentUser.uid} allReports={allReports}/>}
+      {tab==="dashboard"&&isManager&&<SalesManagerDash allReports={allReports}/>}
+    </div>
+  );
+};
+
+const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,gradeDefs,allReports}) => {
   const [page,setPage] = useState("myeval");
   const [evalData,setEvalData] = useState({});
   const activePeriod = periods.find(p=>p.active)||periods[0];
@@ -579,17 +816,19 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
     return unsub;
   },[currentUser?.uid,userProfile?.id]);
 
-  const updateField = async(key,value)=>{
-    await setDoc(doc(db,"evals",userProfile.id),{[key]:value},{merge:true});
-  };
-
+  const updateField = async(key,value)=>{ await setDoc(doc(db,"evals",userProfile.id),{[key]:value},{merge:true}); };
   const categoryGroups = criteria.reduce((acc,c)=>{if(!acc[c.category])acc[c.category]=[];acc[c.category].push(c);return acc;},{});
 
-  const EMP_NAV = [{id:"myeval",label:"自己評価",shortLabel:"評価",icon:"✎"},{id:"myresult",label:"評価結果",shortLabel:"結果",icon:"▦"}];
-  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果"};
+  const EMP_NAV = [
+    {id:"myeval",label:"自己評価",shortLabel:"評価",icon:"✎"},
+    {id:"myresult",label:"評価結果",shortLabel:"結果",icon:"▦"},
+    {id:"sales",label:"販売実績",shortLabel:"実績",icon:"📊"},
+  ];
+  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績"};
 
   return (
     <AppShell nav={EMP_NAV} page={page} setPage={setPage} currentUser={{...currentUser,displayName:userProfile?.name,role:"member",grade:userProfile?.grade}} activePeriod={activePeriod} onLogout={onLogout} pageTitle={pageTitles[page]}>
+      {page==="sales"&&<SalesPage currentUser={currentUser} userProfile={userProfile} isManager={false} allReports={allReports}/>}
       {page==="myeval"&&(
         <div>
           <div style={{background:C.purple[50],border:`1px solid ${C.purple[200]}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.purple[800]}}><strong>{userProfile?.grade}</strong> — {gradeDefs[userProfile?.grade]}</div>
@@ -624,6 +863,7 @@ const MANAGER_NAV = [
   {id:"evaluation",label:"評価フォーム",shortLabel:"評価",icon:"✎"},
   {id:"results",label:"結果・集計",shortLabel:"集計",icon:"▦"},
   {id:"ai",label:"AI分析",shortLabel:"AI",icon:"✦"},
+  {id:"sales",label:"販売実績",shortLabel:"実績",icon:"📊"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"⚉"},
   {id:"settings",label:"設定",shortLabel:"設定",icon:"⚙"},
 ];
@@ -635,21 +875,22 @@ export default function App() {
   const [page,setPage] = useState("dashboard");
   const [users,setUsers] = useState([]);
   const [evals,setEvals] = useState({});
+  const [allReports,setAllReports] = useState([]);
   const [settings,setSettings] = useState({departments:DEPARTMENTS_DEFAULT,gradeDefs:GRADE_DEFS_DEFAULT,periods:PERIODS_DEFAULT});
   const [selectedUserId,setSelectedUserId] = useState(null);
 
   useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async user => {
-      if (user) {
+      if(user){
         setAuthUser(user);
-        const snap = await getDoc(doc(db, "users", user.uid));
-        if (snap.exists()) {
+        const snap = await getDoc(doc(db,"users",user.uid));
+        if(snap.exists()){
           const data = snap.data();
-          if (data.status === "pending") {
+          if(data.status==="pending"){
             await signOut(auth);
             alert("承認待ちです。管理者の承認をお待ちください。");
           } else {
-            setUserProfile({ id: user.uid, ...data });
+            setUserProfile({id:user.uid,...data});
           }
         }
       } else {
@@ -670,9 +911,17 @@ export default function App() {
   },[authUser]);
 
   useEffect(()=>{
+    if(!userProfile)return;
+    const unsub = onSnapshot(collectionGroup(db,"daily"),snap=>{
+      setAllReports(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return unsub;
+  },[userProfile]);
+
+  useEffect(()=>{
     if(!userProfile||userProfile.role!=="manager")return;
     const unsub = onSnapshot(collection(db,"users"),snap=>{
-      const u = snap.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.role!=="manager");
+      const u=snap.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.role!=="manager");
       setUsers(u);
       if(u.length&&!selectedUserId) setSelectedUserId(u[0].id);
     });
@@ -689,35 +938,18 @@ export default function App() {
   },[userProfile]);
 
   const handleLogout = ()=>signOut(auth);
-
-  const onSaveEval = async(userId,data)=>{
-    await setDoc(doc(db,"evals",userId),data,{merge:true});
-  };
-
-  const onSaveSettings = async(data)=>{
-    await setDoc(doc(db,"settings","config"),data,{merge:true});
-  };
-
-  const onAddUser = async(form)=>{
-    const newId = "user_"+Date.now();
-    const profile = {name:form.name,email:form.email,dept:form.dept,grade:form.grade,role:"member",tempPassword:form.password,needsSetup:true};
-    await setDoc(doc(db,"users",newId),profile);
-  };
-
-  const onUpdateUser = async(id,data)=>{
-    await updateDoc(doc(db,"users",id),data);
-  };
-
-  const onDeleteUser = async(id)=>{
-    await deleteDoc(doc(db,"users",id));
-  };
+  const onSaveEval = async(userId,data)=>{ await setDoc(doc(db,"evals",userId),data,{merge:true}); };
+  const onSaveSettings = async(data)=>{ await setDoc(doc(db,"settings","config"),data,{merge:true}); };
+  const onAddUser = async(form)=>{ const newId="user_"+Date.now(); await setDoc(doc(db,"users",newId),{name:form.name,email:form.email,dept:form.dept,grade:form.grade,role:"member",tempPassword:form.password,needsSetup:true}); };
+  const onUpdateUser = async(id,data)=>{ await updateDoc(doc(db,"users",id),data); };
+  const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",users:"メンバー管理",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",users:"メンバー管理",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
-  if(userProfile?.role==="member") return <EmployeeView currentUser={authUser} userProfile={userProfile} onLogout={handleLogout} onSaveEval={onSaveEval} periods={settings.periods||PERIODS_DEFAULT} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>;
+  if(userProfile?.role==="member") return <EmployeeView currentUser={authUser} userProfile={userProfile} onLogout={handleLogout} onSaveEval={onSaveEval} periods={settings.periods||PERIODS_DEFAULT} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT} allReports={allReports}/>;
 
   return (
     <AppShell nav={MANAGER_NAV} page={page} setPage={setPage} currentUser={{...authUser,displayName:userProfile?.name||authUser.email,role:"manager"}} activePeriod={activePeriod} onLogout={handleLogout} pageTitle={pageTitles[page]}>
@@ -725,6 +957,7 @@ export default function App() {
       {page==="evaluation"&&<EvaluationPage users={users} evals={evals} onSaveEval={onSaveEval} selectedUserId={selectedUserId} setSelectedUserId={setSelectedUserId} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="results"&&<ResultsPage users={users} evals={evals}/>}
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
+      {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports}/>}
       {page==="users"&&<UserManagePage users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} departments={settings.departments||DEPARTMENTS_DEFAULT}/>}
       {page==="settings"&&<SettingsPage currentUser={authUser} departments={settings.departments||DEPARTMENTS_DEFAULT} setDepartments={d=>setSettings(s=>({...s,departments:d}))} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT} setGradeDefs={g=>setSettings(s=>({...s,gradeDefs:g}))} periods={settings.periods||PERIODS_DEFAULT} setPeriods={p=>setSettings(s=>({...s,periods:p}))} onSaveSettings={onSaveSettings}/>}
     </AppShell>
