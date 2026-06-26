@@ -136,7 +136,6 @@ const useIsMobile = () => {
   return mobile;
 };
 
-// ── UI Primitives ──────────────────────────────────────────────
 const Avatar = ({name,idx,size=36}) => { const p=getAvatarColor(idx); return <div style={{width:size,height:size,borderRadius:"50%",background:p[50],color:p[800],display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.34,fontWeight:500,flexShrink:0}}>{initials(name)}</div>; };
 const RankBadge = ({rank,size="sm"}) => { if(!rank) return null; const c=rankColor(rank); return <span style={{fontSize:size==="lg"?15:11,padding:size==="lg"?"4px 12px":"2px 8px",borderRadius:20,background:c[50],color:c[800],fontWeight:600,border:`1px solid ${c[200]}`}}>{rank}</span>; };
 const Badge = ({type,children}) => { const s={done:{bg:C.green[50],color:C.green[800]},wip:{bg:C.amber[50],color:C.amber[800]},none:{bg:C.gray[100],color:C.gray[600]},info:{bg:C.purple[50],color:C.purple[800]}}[type]||{bg:C.gray[100],color:C.gray[600]}; return <span style={{fontSize:11,padding:"2px 9px",borderRadius:20,background:s.bg,color:s.color,fontWeight:500,whiteSpace:"nowrap"}}>{children}</span>; };
@@ -151,7 +150,6 @@ const Textarea = ({value,onChange,rows=3,placeholder}) => <textarea value={value
 const Modal = ({title,onClose,children}) => <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}} onClick={e=>e.target===e.currentTarget&&onClose()}><div style={{background:"#fff",borderRadius:14,width:"100%",maxWidth:480,maxHeight:"90vh",overflow:"auto"}}><div style={{padding:"14px 18px",borderBottom:`0.5px solid ${C.gray[100]}`,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"#fff"}}><div style={{fontSize:15,fontWeight:500,color:C.gray[800]}}>{title}</div><button onClick={onClose} style={{border:"none",background:"none",fontSize:20,cursor:"pointer",color:C.gray[400]}}>×</button></div><div style={{padding:"16px 18px"}}>{children}</div></div></div>;
 const ScoreInput = ({value,onChange,readonly}) => <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>!readonly&&onChange&&onChange(value===n?0:n)} style={{width:32,height:32,borderRadius:6,border:"none",cursor:readonly?"default":"pointer",background:n<=value?C.purple[400]:C.gray[100],color:n<=value?"#fff":C.gray[400],fontSize:13,fontWeight:600,transition:"all 0.1s",fontFamily:"inherit"}}>{n}</button>)}</div>;
 
-// ── Bottom Nav / Sidebar / AppShell ────────────────────────────
 const BottomNav = ({nav,page,setPage}) => <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>{nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 4px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:page===n.id?C.purple[600]:C.gray[400]}}><span style={{fontSize:18}}>{n.icon}</span><span style={{fontSize:10,fontWeight:page===n.id?500:400}}>{n.shortLabel||n.label}</span></button>)}</div>;
 
 const Sidebar = ({nav,page,setPage,currentUser,activePeriod,onLogout}) => (
@@ -193,8 +191,6 @@ const AppShell = ({nav,page,setPage,currentUser,activePeriod,onLogout,pageTitle,
   );
 };
 
-// ── Login ──────────────────────────────────────────────────────
-// ── Login ──────────────────────────────────────────────────────
 const LoginPage = ({onLogin}) => {
   const [tab, setTab] = useState("login");
   const [email, setEmail] = useState("");
@@ -202,7 +198,6 @@ const LoginPage = ({onLogin}) => {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // 初回登録用
   const [regName, setRegName] = useState("");
   const [regDept, setRegDept] = useState(DEPARTMENTS_DEFAULT[0]);
   const [regGrade, setRegGrade] = useState("G1");
@@ -224,9 +219,9 @@ const LoginPage = ({onLogin}) => {
       const { createUserWithEmailAndPassword } = await import("firebase/auth");
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const profile = {name:regName.trim(), email:email.trim(), role:"member", grade:regGrade, dept:regDept, status:"pending"};
-await setDoc(doc(db,"users",cred.user.uid), profile);
-await signOut(auth);
-alert("登録申請を送信しました。管理者の承認をお待ちください。");
+      await setDoc(doc(db,"users",cred.user.uid), profile);
+      await signOut(auth);
+      alert("登録申請を送信しました。管理者の承認をお待ちください。");
     } catch(e) {
       if(e.code==="auth/email-already-in-use") setError("このメールアドレスはすでに登録されています。");
       else if(e.code==="auth/weak-password") setError("パスワードは6文字以上にしてください。");
@@ -243,18 +238,15 @@ alert("登録申請を送信しました。管理者の承認をお待ちくだ�
           <div style={{fontSize:13,color:C.gray[400]}}>G1〜G5等級対応 · 100点満点評価制度</div>
         </div>
         <div style={{background:"#fff",borderRadius:14,border:`0.5px solid ${C.gray[100]}`,padding:"24px 20px"}}>
-          {/* タブ */}
           <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:8,padding:3,marginBottom:20}}>
             {[{id:"login",label:"ログイン"},{id:"register",label:"初回登録"}].map(t=>(
               <button key={t.id} onClick={()=>{setTab(t.id);setError("");}} style={{flex:1,padding:"7px",fontSize:13,borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t.id?C.purple[400]:"transparent",color:tab===t.id?"#fff":C.gray[600],fontWeight:tab===t.id?500:400}}>{t.label}</button>
             ))}
           </div>
-          {/* メール */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>メールアドレス</div>
             <Input value={email} onChange={setEmail} placeholder="your@example.com" type="email"/>
           </div>
-          {/* パスワード */}
           <div style={{marginBottom:tab==="register"?14:18}}>
             <div style={{fontSize:12,color:C.gray[600],marginBottom:5}}>パスワード</div>
             <div style={{position:"relative"}}>
@@ -262,7 +254,6 @@ alert("登録申請を送信しました。管理者の承認をお待ちくだ�
               <button onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",fontSize:12,color:C.gray[400]}}>{showPw?"隠す":"表示"}</button>
             </div>
           </div>
-          {/* 初回登録フォーム */}
           {tab==="register"&&(
             <div style={{marginBottom:18,display:"flex",flexDirection:"column",gap:12}}>
               <div>
@@ -289,7 +280,6 @@ alert("登録申請を送信しました。管理者の承認をお待ちくだ�
   );
 };
 
-// ── Dashboard ──────────────────────────────────────────────────
 const Dashboard = ({users,evals,onNavigate,onSelectUser}) => {
   const isMobile = useIsMobile();
   const usersWithScore = users.map((u,i)=>{
@@ -332,7 +322,6 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser}) => {
   );
 };
 
-// ── Evaluation Form ────────────────────────────────────────────
 const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId,gradeDefs}) => {
   const [tab,setTab] = useState("manager");
   const isMobile = useIsMobile();
@@ -401,7 +390,6 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
   );
 };
 
-// ── Results ────────────────────────────────────────────────────
 const ResultsPage = ({users,evals}) => {
   const isMobile = useIsMobile();
   const rows = users.map((u,i)=>{const e=evals[u.id]||{};const ms=e.managerScores&&Object.keys(e.managerScores).length?calcScore(e.managerScores,u.grade):null;const ss=e.selfScores&&Object.keys(e.selfScores).length?calcScore(e.selfScores,u.grade):null;return{...u,idx:i,ms,ss,rank:ms!==null?calcRank(ms):null};});
@@ -437,7 +425,6 @@ const ResultsPage = ({users,evals}) => {
   );
 };
 
-// ── AI Page ────────────────────────────────────────────────────
 const AIPage = ({users,evals,gradeDefs}) => {
   const [target,setTarget] = useState("all");
   const [loading,setLoading] = useState(false);
@@ -464,7 +451,6 @@ const AIPage = ({users,evals,gradeDefs}) => {
   );
 };
 
-// ── User Management ────────────────────────────────────────────
 const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments}) => {
   const [showModal,setShowModal] = useState(false);
   const [editingId,setEditingId] = useState(null);
@@ -475,29 +461,30 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
   const save = async()=>{
     if(!form.name.trim())return;
     setSaving(true);
-   if(editingId){await onUpdateUser(editingId,{name:form.name,dept:form.dept,grade:form.grade,status:"approved"});}
+    if(editingId){await onUpdateUser(editingId,{name:form.name,dept:form.dept,grade:form.grade,status:"approved"});}
     else{await onAddUser(form);}
     setSaving(false);setShowModal(false);
   };
   const remove = async id=>{if(window.confirm("削除しますか？"))await onDeleteUser(id);};
   return (
-    <div>{users.filter(u=>u.status==="pending").length>0&&(
-  <div style={{marginBottom:16}}>
-    <div style={{fontSize:13,fontWeight:500,color:C.coral[800],marginBottom:8,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>
-      承認待ち {users.filter(u=>u.status==="pending").length} 名
-    </div>
-    {users.filter(u=>u.status==="pending").map((u,i)=>(
-      <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.amber[50],borderRadius:8,marginBottom:6}}>
-        <Avatar name={u.name} idx={i} size={32}/>
-        <div style={{flex:1}}>
-          <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div>
-          <div style={{fontSize:11,color:C.gray[400]}}>{u.email} · {u.dept} · {u.grade}</div>
+    <div>
+      {users.filter(u=>u.status==="pending").length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:500,color:C.coral[800],marginBottom:8,padding:"8px 12px",background:C.coral[50],borderRadius:8}}>
+            承認待ち {users.filter(u=>u.status==="pending").length} 名
+          </div>
+          {users.filter(u=>u.status==="pending").map((u,i)=>(
+            <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.amber[50],borderRadius:8,marginBottom:6}}>
+              <Avatar name={u.name} idx={i} size={32}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div>
+                <div style={{fontSize:11,color:C.gray[400]}}>{u.email} · {u.dept} · {u.grade}</div>
+              </div>
+              <Btn small onClick={()=>openEdit(u)}>編集・承認</Btn>
+            </div>
+          ))}
         </div>
-        <Btn small onClick={()=>openEdit(u)}>編集・承認</Btn>
-      </div>
-    ))}
-  </div>
-)}
+      )}
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn primary onClick={openNew}>+ メンバーを追加</Btn></div>
       <Card>
         {users.map((u,i)=>(
@@ -522,18 +509,14 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
   );
 };
 
-// ── Settings ───────────────────────────────────────────────────
 const SettingsPage = ({currentUser,departments,setDepartments,gradeDefs,setGradeDefs,periods,setPeriods,onSaveSettings}) => {
   const [tab,setTab] = useState("account");
   const [saved,setSaved] = useState("");
   const showSaved = msg=>{setSaved(msg||"保存しました");setTimeout(()=>setSaved(""),2500);};
-  const [newName,setNewName] = useState(currentUser.displayName||"");
   const [newEmail,setNewEmail] = useState(currentUser.email||"");
   const [oldPw,setOldPw] = useState("");
   const [newPw,setNewPw] = useState("");
   const [pwError,setPwError] = useState("");
-  const [bulkText,setBulkText] = useState("");
-  const [bulkError,setBulkError] = useState("");
   const [newDept,setNewDept] = useState("");
   const [localGradeDefs,setLocalGradeDefs] = useState({...gradeDefs});
   const [newPeriodLabel,setNewPeriodLabel] = useState("");
@@ -578,7 +561,6 @@ const SettingsPage = ({currentUser,departments,setDepartments,gradeDefs,setGrade
   );
 };
 
-// ── Employee View ──────────────────────────────────────────────
 const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,gradeDefs}) => {
   const [page,setPage] = useState("myeval");
   const [evalData,setEvalData] = useState({});
@@ -637,7 +619,6 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
   );
 };
 
-// ── Manager Nav ────────────────────────────────────────────────
 const MANAGER_NAV = [
   {id:"dashboard",label:"ダッシュボード",shortLabel:"ホーム",icon:"⊞"},
   {id:"evaluation",label:"評価フォーム",shortLabel:"評価",icon:"✎"},
@@ -647,7 +628,6 @@ const MANAGER_NAV = [
   {id:"settings",label:"設定",shortLabel:"設定",icon:"⚙"},
 ];
 
-// ── App ────────────────────────────────────────────────────────
 export default function App() {
   const [authUser,setAuthUser] = useState(null);
   const [userProfile,setUserProfile] = useState(null);
@@ -658,34 +638,29 @@ export default function App() {
   const [settings,setSettings] = useState({departments:DEPARTMENTS_DEFAULT,gradeDefs:GRADE_DEFS_DEFAULT,periods:PERIODS_DEFAULT});
   const [selectedUserId,setSelectedUserId] = useState(null);
 
-  // Auth state
   useEffect(()=>{
-    const unsub = onAuthStateChanged(auth,async user=>{
-      if(user){
+    const unsub = onAuthStateChanged(auth, async user => {
+      if (user) {
         setAuthUser(user);
-        const snap = await getDoc(doc(db,"users",user.uid));
-       if(snap.exists()){
-  const data = snap.data();
-  if(data.status === "pending"){
-    await signOut(auth);
-    alert("承認待ちです。管理者の承認をお待ちください。");
-  } else {
-    setUserProfile({id:user.uid,...data});
-  }
-}
-       } else {
-          // 未登録ユーザーはログアウト
-          await signOut(auth);
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.status === "pending") {
+            await signOut(auth);
+            alert("承認待ちです。管理者の承認をお待ちください。");
+          } else {
+            setUserProfile({ id: user.uid, ...data });
+          }
         }
       } else {
-        setAuthUser(null);setUserProfile(null);
+        setAuthUser(null);
+        setUserProfile(null);
       }
       setLoading(false);
     });
     return unsub;
   },[]);
 
-  // Load settings
   useEffect(()=>{
     if(!authUser)return;
     const unsub = onSnapshot(doc(db,"settings","config"),snap=>{
@@ -694,7 +669,6 @@ export default function App() {
     return unsub;
   },[authUser]);
 
-  // Load users (managers only)
   useEffect(()=>{
     if(!userProfile||userProfile.role!=="manager")return;
     const unsub = onSnapshot(collection(db,"users"),snap=>{
@@ -705,7 +679,6 @@ export default function App() {
     return unsub;
   },[userProfile]);
 
-  // Load evals (managers only)
   useEffect(()=>{
     if(!userProfile||userProfile.role!=="manager")return;
     const unsub = onSnapshot(collection(db,"evals"),snap=>{
@@ -726,8 +699,6 @@ export default function App() {
   };
 
   const onAddUser = async(form)=>{
-    // Create Firebase Auth user via API isn't possible client-side without Admin SDK
-    // Instead save to users collection with a flag for admin to set password
     const newId = "user_"+Date.now();
     const profile = {name:form.name,email:form.email,dept:form.dept,grade:form.grade,role:"member",tempPassword:form.password,needsSetup:true};
     await setDoc(doc(db,"users",newId),profile);
