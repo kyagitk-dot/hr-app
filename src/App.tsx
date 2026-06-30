@@ -724,10 +724,21 @@ const SalesManagerDash = ({allReports}) => {
   const [filterAgency,setFilterAgency] = useState("");
   const [filterStore,setFilterStore] = useState("");
   const [filterCarrier,setFilterCarrier] = useState("all");
+  const [deleting,setDeleting] = useState(null);
   const now = new Date();
+
+  const deleteReport = async (uid, date) => {
+    if (!window.confirm(`${date} の報告データを削除しますか？この操作は取り消せません。`)) return;
+    setDeleting(`${uid}_${date}`);
+    try {
+      await deleteDoc(doc(db, "salesReports", uid, "daily", date));
+    } finally {
+      setDeleting(null);
+    }
+  };
   const thisMonth = allReports.filter(r=>{const d=new Date(r.date);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
   const filtered = thisMonth.filter(r=>(!filterAgency||(r.agency||"").includes(filterAgency))&&(!filterStore||(r.storeName||"").includes(filterStore)));
-  const dailyRows = filtered.flatMap(r=>(r.entries||[]).filter(e=>filterCarrier==="all"||e.carrierId===filterCarrier).map((e,idx)=>({date:r.date,name:r.displayName,agency:r.agency,store:r.storeName,carrier:e.carrierId,peripheralTotal:idx===0?(r.peripheralTotal||0):0,...e}))).sort((a,b)=>b.date.localeCompare(a.date));
+  const dailyRows = filtered.flatMap(r=>(r.entries||[]).filter(e=>filterCarrier==="all"||e.carrierId===filterCarrier).map((e,idx)=>({uid:r.uid,date:r.date,name:r.displayName,agency:r.agency,store:r.storeName,carrier:e.carrierId,peripheralTotal:idx===0?(r.peripheralTotal||0):0,...e}))).sort((a,b)=>b.date.localeCompare(a.date));
   const carrierTotals = CARRIERS_SALES.map(c=>{const rows=filtered.flatMap(r=>(r.entries||[]).filter(e=>e.carrierId===c.id));return{carrier:c.label,total:rows.reduce((s,e)=>s+salesTotal(e),0),color:CARRIER_COLORS_S[c.id]};}).sort((a,b)=>b.total-a.total);
   const peripheralMonthTotal = filtered.reduce((s,r)=>s+(r.peripheralTotal||0),0);
   const agencyTotals = Object.entries(filtered.reduce((acc,r)=>{const key=`${r.agency||"未入力"}__${r.storeName||"未入力"}`;if(!acc[key])acc[key]={agency:r.agency||"未入力",store:r.storeName||"未入力",total:0};acc[key].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);return acc;},{})).map(([,v])=>v).sort((a,b)=>b.total-a.total);
@@ -752,11 +763,15 @@ const SalesManagerDash = ({allReports}) => {
       {tab==="daily"&&(
         <Card>
           <CardTitle>日別一覧（今月）</CardTitle>
+          <div style={{fontSize:11,color:C.gray[400],marginBottom:8}}>削除ボタンはその日の報告（全キャリア分）をまとめて削除します</div>
           {dailyRows.length===0?<div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>:(
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","ネット","CC","電気/G","計","周辺機器"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                <tbody>{dailyRows.map((r,i)=>(
+                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","ネット","CC","電気/G","計","周辺機器",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <tbody>{dailyRows.map((r,i)=>{
+                  const isFirstOfDay = i===0 || dailyRows[i-1].uid!==r.uid || dailyRows[i-1].date!==r.date;
+                  const key = `${r.uid}_${r.date}`;
+                  return(
                   <tr key={i} style={{borderBottom:`0.5px solid ${C.gray[50]}`}}>
                     <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{r.date}</td>
                     <td style={{padding:"6px 8px",fontWeight:500,color:C.gray[800]}}>{r.name}</td>
@@ -766,8 +781,12 @@ const SalesManagerDash = ({allReports}) => {
                     {["newContract","deviceChange","mnpIn","netLine","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
                     <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.purple[800]}}>{salesTotal(r)}</td>
                     <td style={{padding:"6px 8px",textAlign:"right",color:r.peripheralTotal>0?C.gray[800]:C.gray[200]}}>{r.peripheralTotal?r.peripheralTotal.toLocaleString()+"円":"-"}</td>
+                    <td style={{padding:"6px 8px"}}>
+                      {isFirstOfDay&&<button onClick={()=>deleteReport(r.uid,r.date)} disabled={deleting===key} style={{border:`0.5px solid ${C.coral[400]}`,background:C.coral[50],color:C.coral[800],borderRadius:6,padding:"3px 8px",fontSize:10,cursor:deleting===key?"default":"pointer",fontFamily:"inherit"}}>{deleting===key?"削除中":"削除"}</button>}
+                    </td>
                   </tr>
-                ))}</tbody>
+                  );
+                })}</tbody>
               </table>
             </div>
           )}
