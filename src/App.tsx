@@ -135,6 +135,7 @@ const SALES_FIELDS = [
   {key:"newContract",label:"新規契約"},
   {key:"deviceChange",label:"機種変更"},
   {key:"mnpIn",label:"MNP転入"},
+  {key:"portIn",label:"番号移行"},
   {key:"netLine",label:"ネット回線"},
   {key:"creditCard",label:"クレカ"},
   {key:"energy",label:"電気・ガス"},
@@ -621,11 +622,11 @@ const SalesInputForm = ({uid, displayName}) => {
       <Card>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>モバイル</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {SALES_FIELDS.slice(0,3).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+          {SALES_FIELDS.slice(0,4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
         </div>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>付帯商材</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {SALES_FIELDS.slice(3).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+          {SALES_FIELDS.slice(4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
         </div>
       </Card>
       <Card>
@@ -638,9 +639,9 @@ const SalesInputForm = ({uid, displayName}) => {
         </div>
         <div style={{fontSize:11,color:C.gray[400],marginTop:6}}>キャリアを問わず、本日の周辺機器売上の合計金額を入力してください</div>
       </Card>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-        {["newContract","deviceChange","mnpIn"].map((k,i)=>{
-          const labels=["新規","機変","MNP転入"];
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+        {["newContract","deviceChange","mnpIn","portIn"].map((k,i)=>{
+          const labels=["新規","機変","MNP転入","番号移行"];
           const total=entries.reduce((s,e)=>s+(e[k]||0),0);
           return(<div key={k} style={{background:C.gray[50],borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:C.gray[400],marginBottom:2}}>{labels[i]}</div><div style={{fontSize:20,fontWeight:600,color:C.gray[800]}}>{total}</div></div>);
         })}
@@ -767,7 +768,7 @@ const SalesManagerDash = ({allReports}) => {
           {dailyRows.length===0?<div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>:(
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","ネット","CC","電気/G","計","周辺機器",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","番号移行","ネット","CC","電気/G","計","周辺機器",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                 <tbody>{dailyRows.map((r,i)=>{
                   const isFirstOfDay = i===0 || dailyRows[i-1].uid!==r.uid || dailyRows[i-1].date!==r.date;
                   const key = `${r.uid}_${r.date}`;
@@ -778,7 +779,7 @@ const SalesManagerDash = ({allReports}) => {
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.agency||"-"}</td>
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.store||"-"}</td>
                     <td style={{padding:"6px 8px"}}><span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:CARRIER_COLORS_S[r.carrier]+"20",color:CARRIER_COLORS_S[r.carrier],fontWeight:500}}>{CARRIERS_SALES.find(c=>c.id===r.carrier)?.label}</span></td>
-                    {["newContract","deviceChange","mnpIn","netLine","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
+                    {["newContract","deviceChange","mnpIn","portIn","netLine","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
                     <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.purple[800]}}>{salesTotal(r)}</td>
                     <td style={{padding:"6px 8px",textAlign:"right",color:r.peripheralTotal>0?C.gray[800]:C.gray[200]}}>{r.peripheralTotal?r.peripheralTotal.toLocaleString()+"円":"-"}</td>
                     <td style={{padding:"6px 8px"}}>
