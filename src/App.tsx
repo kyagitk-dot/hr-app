@@ -183,7 +183,30 @@ const NumInput = ({value,onChange,disabled}) => (
     style={{width:"100%",height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,textAlign:"right",background:disabled?C.gray[50]:"#fff",color:C.gray[800],outline:"none",fontFamily:"inherit"}}/>
 );
 
-const BottomNav = ({nav,page,setPage}) => <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>{nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 4px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:page===n.id?C.purple[600]:C.gray[400]}}><span style={{fontSize:18}}>{n.icon}</span><span style={{fontSize:10,fontWeight:page===n.id?500:400}}>{n.shortLabel||n.label}</span></button>)}</div>;
+// ── ナビゲーション用アイコン（統一された線画スタイル）──────────
+const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+  switch (name) {
+    case "home":
+      return <svg {...common}><path d="M3 11.5L12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>;
+    case "edit":
+      return <svg {...common}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>;
+    case "grid":
+      return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
+    case "spark":
+      return <svg {...common}><path d="M12 3v4M12 17v4M5 5l2.5 2.5M16.5 16.5L19 19M3 12h4M17 12h4M5 19l2.5-2.5M16.5 7.5L19 5"/></svg>;
+    case "chart":
+      return <svg {...common}><path d="M4 19V10M10 19V5M16 19v-7M22 19H2"/></svg>;
+    case "users":
+      return <svg {...common}><circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M14.5 13.2c2.4.4 4.3 2.5 4.5 5.3"/></svg>;
+    case "settings":
+      return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
+    default:
+      return <svg {...common}><circle cx="12" cy="12" r="9"/></svg>;
+  }
+};
+
+const BottomNav = ({nav,page,setPage}) => <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>{nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 4px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:page===n.id?C.purple[600]:C.gray[400]}}><NavIcon name={n.icon} size={20}/><span style={{fontSize:10,fontWeight:page===n.id?500:400}}>{n.shortLabel||n.label}</span></button>)}</div>;
 
 const Sidebar = ({nav,page,setPage,currentUser,activePeriod,onLogout}) => (
   <div style={{width:220,flexShrink:0,background:"#fff",borderRight:`0.5px solid ${C.gray[100]}`,display:"flex",flexDirection:"column",height:"100vh"}}>
@@ -192,7 +215,7 @@ const Sidebar = ({nav,page,setPage,currentUser,activePeriod,onLogout}) => (
       <div style={{fontSize:11,color:C.gray[400],marginTop:3}}>{activePeriod?.label}</div>
     </div>
     <nav style={{padding:"8px 0",flex:1,overflowY:"auto"}}>
-      {nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 18px",border:"none",cursor:"pointer",fontSize:13,background:page===n.id?C.purple[50]:"transparent",color:page===n.id?C.purple[800]:C.gray[600],fontWeight:page===n.id?500:400,borderRight:page===n.id?`2px solid ${C.purple[400]}`:"2px solid transparent",fontFamily:"inherit"}}><span style={{fontSize:15}}>{n.icon}</span>{n.label}</button>)}
+      {nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 18px",border:"none",cursor:"pointer",fontSize:13,background:page===n.id?C.purple[50]:"transparent",color:page===n.id?C.purple[800]:C.gray[600],fontWeight:page===n.id?500:400,borderRight:page===n.id?`2px solid ${C.purple[400]}`:"2px solid transparent",fontFamily:"inherit"}}><NavIcon name={n.icon} size={17}/>{n.label}</button>)}
     </nav>
     <div style={{padding:"12px 16px",borderTop:`0.5px solid ${C.gray[100]}`}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -210,14 +233,14 @@ const Sidebar = ({nav,page,setPage,currentUser,activePeriod,onLogout}) => (
 const AppShell = ({nav,page,setPage,currentUser,activePeriod,onLogout,pageTitle,children}) => {
   const isMobile = useIsMobile();
   return (
-    <div style={{display:"flex",height:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",background:"#f7f6f2",color:C.gray[800]}}>
+    <div style={{position:"fixed",inset:0,display:"flex",fontFamily:"system-ui,-apple-system,sans-serif",background:"#f7f6f2",color:C.gray[800],overflow:"hidden"}}>
       {!isMobile&&<Sidebar nav={nav} page={page} setPage={setPage} currentUser={currentUser} activePeriod={activePeriod} onLogout={onLogout}/>}
-      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
         <div style={{padding:isMobile?"12px 16px":"13px 24px",background:"#fff",borderBottom:`0.5px solid ${C.gray[100]}`,display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
           <div style={{fontSize:isMobile?15:16,fontWeight:500,color:C.gray[800]}}>{pageTitle}</div>
           {isMobile?<button onClick={onLogout} style={{fontSize:12,border:"none",background:"none",color:C.gray[400],cursor:"pointer",fontFamily:"inherit"}}>ログアウト</button>:<div style={{fontSize:11,color:C.gray[400]}}>{activePeriod?.label}</div>}
         </div>
-        <div style={{flex:1,overflow:"auto",padding:isMobile?"14px 14px 80px":"20px 24px"}}>{children}</div>
+        <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:isMobile?"14px 14px 84px":"20px 24px"}}>{children}</div>
       </div>
       {isMobile&&<BottomNav nav={nav} page={page} setPage={setPage}/>}
     </div>
@@ -839,9 +862,9 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
   const categoryGroups = criteria.reduce((acc,c)=>{if(!acc[c.category])acc[c.category]=[];acc[c.category].push(c);return acc;},{});
 
   const EMP_NAV = [
-    {id:"myeval",label:"自己評価",shortLabel:"評価",icon:"✎"},
-    {id:"myresult",label:"評価結果",shortLabel:"結果",icon:"▦"},
-    {id:"sales",label:"販売実績",shortLabel:"実績",icon:"📊"},
+    {id:"myeval",label:"自己評価",shortLabel:"評価",icon:"edit"},
+    {id:"myresult",label:"評価結果",shortLabel:"結果",icon:"grid"},
+    {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
   ];
   const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績"};
 
@@ -878,13 +901,13 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
 };
 
 const MANAGER_NAV = [
-  {id:"dashboard",label:"ダッシュボード",shortLabel:"ホーム",icon:"⊞"},
-  {id:"evaluation",label:"評価フォーム",shortLabel:"評価",icon:"✎"},
-  {id:"results",label:"結果・集計",shortLabel:"集計",icon:"▦"},
-  {id:"ai",label:"AI分析",shortLabel:"AI",icon:"✦"},
-  {id:"sales",label:"販売実績",shortLabel:"実績",icon:"📊"},
-  {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"⚉"},
-  {id:"settings",label:"設定",shortLabel:"設定",icon:"⚙"},
+  {id:"dashboard",label:"ダッシュボード",shortLabel:"ホーム",icon:"home"},
+  {id:"evaluation",label:"評価フォーム",shortLabel:"評価",icon:"edit"},
+  {id:"results",label:"結果・集計",shortLabel:"集計",icon:"grid"},
+  {id:"ai",label:"AI分析",shortLabel:"AI",icon:"spark"},
+  {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
+  {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
+  {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
 
 export default function App() {
