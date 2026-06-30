@@ -21,6 +21,8 @@ const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 const CARRIER_KEYWORDS: Record<string, string> = {
   docomo: "docomo",
   ドコモ: "docomo",
+  ahamo: "ahamo",
+  アハモ: "ahamo",
   au: "au",
   エーユー: "au",
   softbank: "softbank",
@@ -37,18 +39,27 @@ const FIELD_KEYWORDS: Record<string, string> = {
   機種変更: "deviceChange",
   機変: "deviceChange",
   mnp転入: "mnpIn",
-  転入: "mnpIn",
   mnp転出: "mnpOut",
   転出: "mnpOut",
+  転入: "mnpIn",
+  mnp: "mnpIn",
+  光回線: "netLine",
+  ネット回線: "netLine",
+  インターネット: "netLine",
+  ひかり: "netLine",
   ネット: "netLine",
+  wifi: "netLine",
+  "wi-fi": "netLine",
   光: "netLine",
-  周辺機器: "peripheral",
-  機器: "peripheral",
-  クレカ: "creditCard",
   クレジット: "creditCard",
+  クレカ: "creditCard",
+  カード: "creditCard",
   電気: "energy",
   ガス: "energy",
 };
+
+// 周辺機器は「件数」ではなく「金額（円）」で別集計する
+const PERIPHERAL_KEYWORDS = ["周辺機器", "アクセサリ", "機器", "付属品"];
 
 const FIELD_LABELS: Record<string, string> = {
   newContract: "新規",
@@ -63,6 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 const CARRIER_LABELS: Record<string, string> = {
   docomo: "docomo",
+  ahamo: "ahamo",
   au: "au",
   softbank: "SoftBank",
   ymobile: "ワイモバイル",
@@ -104,7 +116,6 @@ function parseReportText(text: string) {
       break;
     }
   }
-  if (!carrierId) return null;
 
   const entry: Record<string, number> = {};
   for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) {
@@ -112,13 +123,33 @@ function parseReportText(text: string) {
     const m = lower.match(re);
     if (m) entry[key] = parseInt(m[1], 10);
   }
-  if (Object.keys(entry).length === 0) return null;
+
+  // 周辺機器は金額（円）として別枠で抽出する
+  let peripheralAmount = 0;
+  for (const kw of PERIPHERAL_KEYWORDS) {
+    const re = new RegExp(`${kw}[^0-9]{0,5}([0-9,]+)\\s*円?`, "i");
+    const m = text.match(re);
+    if (m) {
+      peripheralAmount = parseInt(m[1].replace(/,/g, ""), 10);
+      break;
+    }
+  }
+
+  if (!carrierId && Object.keys(entry).length === 0 && peripheralAmount === 0) {
+    return null;
+  }
 
   let storeName = "";
   const storeMatch = text.match(/(.+?店)で/);
   if (storeMatch) storeName = storeMatch[1];
 
-  return { carrierId, entry, agency: "", storeName };
+  return {
+    carrierId: carrierId || "other",
+    entry,
+    peripheralAmount,
+    agency: "",
+    storeName,
+  };
 }
 
 function totalOfEntry(e: any): number {
@@ -128,7 +159,6 @@ function totalOfEntry(e: any): number {
     "mnpIn",
     "mnpOut",
     "netLine",
-    "peripheral",
     "creditCard",
     "energy",
   ].reduce((s, k) => s + (e[k] || 0), 0);
@@ -232,9 +262,14 @@ export default async function handler(req: any, res: any) {
             .filter((e) => totalOfEntry(e) > 0)
             .map((e) => `${CARRIER_LABELS[e.carrierId] || e.carrierId}：${totalOfEntry(e)}件`)
             .join("\n");
+          const peripheralTotal = data.peripheralTotal || 0;
+          const peripheralLine =
+            peripheralTotal > 0
+              ? `\n周辺機器：${peripheralTotal.toLocaleString()}円`
+              : "";
           await replyMessage(
             replyToken,
-            `【本日の実績】\n${lines}\n\n合計：${total}件`
+            `【本日の実績】\n${lines}${peripheralLine}\n\n合計：${total}件`
           );
         }
         continue;
@@ -342,7 +377,7 @@ export default async function handler(req: any, res: any) {
         .doc(date);
       const snap = await ref.get();
 
-      const existing = snap.exists ? snap.data()! : { entries: [] };
+      const existing = snap.exists ? snap.data()! : { entries: [], peripheralTotal: 0 };
       const entries: any[] = existing.entries || [];
       const idx = entries.findIndex((e) => e.carrierId === parsed.carrierId);
 
@@ -353,16 +388,20 @@ export default async function handler(req: any, res: any) {
         mnpIn: 0,
         mnpOut: 0,
         netLine: 0,
-        peripheral: 0,
         creditCard: 0,
         energy: 0,
       });
 
-      if (idx >= 0) {
-        entries[idx] = { ...entries[idx], ...parsed.entry };
-      } else {
-        entries.push({ ...emptyEntry(parsed.carrierId), ...parsed.entry });
+      if (Object.keys(parsed.entry).length > 0) {
+        if (idx >= 0) {
+          entries[idx] = { ...entries[idx], ...parsed.entry };
+        } else {
+          entries.push({ ...emptyEntry(parsed.carrierId), ...parsed.entry });
+        }
       }
+
+      const newPeripheralTotal =
+        (existing.peripheralTotal || 0) + (parsed.peripheralAmount || 0);
 
       await ref.set(
         {
@@ -372,19 +411,25 @@ export default async function handler(req: any, res: any) {
           agency: parsed.agency || existing.agency || "",
           storeName: parsed.storeName || existing.storeName || "",
           entries,
+          peripheralTotal: newPeripheralTotal,
           updatedAt: new Date(),
           createdAt: existing.createdAt || new Date(),
         },
         { merge: true }
       );
 
-      const total = Object.values(parsed.entry).reduce(
+      const itemTotal = Object.values(parsed.entry).reduce(
         (a: number, b) => a + (b as number),
         0
       );
+      const parts: string[] = [];
+      if (itemTotal > 0) parts.push(`件数：${itemTotal}件`);
+      if (parsed.peripheralAmount > 0)
+        parts.push(`周辺機器：${parsed.peripheralAmount.toLocaleString()}円`);
+
       await replyMessage(
         replyToken,
-        `記録しました！今回の入力：${total}件\nアプリでも確認できます。`
+        `記録しました！\n${parts.join("\n")}\nアプリでも確認できます。`
       );
     }
 
