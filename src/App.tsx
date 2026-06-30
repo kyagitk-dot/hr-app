@@ -120,6 +120,7 @@ const PERIODS_DEFAULT = [{id:"2026H1",label:"2026年度 上半期",active:true}]
 // ── 販売実績 定数 ──────────────────────────────────────────────
 const CARRIERS_SALES = [
   {id:"docomo",label:"docomo"},
+  {id:"ahamo",label:"ahamo"},
   {id:"au",label:"au"},
   {id:"softbank",label:"SoftBank"},
   {id:"ymobile",label:"ワイモバイル"},
@@ -127,16 +128,14 @@ const CARRIERS_SALES = [
   {id:"other",label:"その他格安SIM"},
 ];
 const CARRIER_COLORS_S = {
-  docomo:"#e24b4a",au:"#ef9f27",softbank:"#ba7517",
+  docomo:"#e24b4a",ahamo:"#534ab7",au:"#ef9f27",softbank:"#ba7517",
   ymobile:"#378add",uq:"#1d9e75",other:"#888780",
 };
 const SALES_FIELDS = [
   {key:"newContract",label:"新規契約"},
   {key:"deviceChange",label:"機種変更"},
   {key:"mnpIn",label:"MNP転入"},
-  {key:"mnpOut",label:"MNP転出"},
   {key:"netLine",label:"ネット回線"},
-  {key:"peripheral",label:"周辺機器"},
   {key:"creditCard",label:"クレカ"},
   {key:"energy",label:"電気・ガス"},
 ];
@@ -525,6 +524,7 @@ const SalesInputForm = ({uid, displayName}) => {
   const [storeName,setStoreName] = useState("");
   const [carrierId,setCarrierId] = useState("docomo");
   const [entries,setEntries] = useState(CARRIERS_SALES.map(c=>emptyEntry(c.id)));
+  const [peripheralAmount,setPeripheralAmount] = useState(0);
   const [saving,setSaving] = useState(false);
   const [savedAt,setSavedAt] = useState(null);
   const [loading,setLoading] = useState(true);
@@ -537,9 +537,9 @@ const SalesInputForm = ({uid, displayName}) => {
         const d=snap.data();
         setAgency(d.agency||"");setStoreName(d.storeName||"");
         const merged=CARRIERS_SALES.map(c=>{const found=(d.entries||[]).find(e=>e.carrierId===c.id);return found||emptyEntry(c.id);});
-        setEntries(merged);setSavedAt(d.updatedAt?.toDate?.()||null);
+        setEntries(merged);setPeripheralAmount(d.peripheralTotal||0);setSavedAt(d.updatedAt?.toDate?.()||null);
       } else {
-        setAgency("");setStoreName("");setEntries(CARRIERS_SALES.map(c=>emptyEntry(c.id)));setSavedAt(null);
+        setAgency("");setStoreName("");setEntries(CARRIERS_SALES.map(c=>emptyEntry(c.id)));setPeripheralAmount(0);setSavedAt(null);
       }
     }).finally(()=>setLoading(false));
   },[uid,date]);
@@ -549,7 +549,7 @@ const SalesInputForm = ({uid, displayName}) => {
     setSaving(true);
     const ref=doc(db,"salesReports",uid,"daily",date);
     const snap=await getDoc(ref);
-    await setDoc(ref,{uid,displayName,date,agency,storeName,entries,createdAt:snap.exists()?snap.data().createdAt:new Date(),updatedAt:new Date()});
+    await setDoc(ref,{uid,displayName,date,agency,storeName,entries,peripheralTotal:peripheralAmount,createdAt:snap.exists()?snap.data().createdAt:new Date(),updatedAt:new Date()});
     setSavedAt(new Date());setSaving(false);
   };
   const current=entries.find(e=>e.carrierId===carrierId)||emptyEntry(carrierId);
@@ -598,19 +598,30 @@ const SalesInputForm = ({uid, displayName}) => {
       <Card>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>モバイル</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {SALES_FIELDS.slice(0,4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+          {SALES_FIELDS.slice(0,3).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
         </div>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>付帯商材</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {SALES_FIELDS.slice(4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+          {SALES_FIELDS.slice(3).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
         </div>
       </Card>
+      <Card>
+        <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>周辺機器（金額・本日合計）</div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <input type="number" min={0} value={peripheralAmount===0?"":peripheralAmount} placeholder="0" disabled={!isToday}
+            onChange={e=>setPeripheralAmount(Math.max(0,parseInt(e.target.value||"0",10)))}
+            style={{flex:1,height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:14,textAlign:"right",background:isToday?"#fff":C.gray[50],color:C.gray[800],outline:"none",fontFamily:"inherit"}}/>
+          <span style={{fontSize:13,color:C.gray[400]}}>円</span>
+        </div>
+        <div style={{fontSize:11,color:C.gray[400],marginTop:6}}>キャリアを問わず、本日の周辺機器売上の合計金額を入力してください</div>
+      </Card>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-        {["newContract","deviceChange","mnpIn","mnpOut"].map((k,i)=>{
-          const labels=["新規","機変","MNP転入","MNP転出"];
+        {["newContract","deviceChange","mnpIn"].map((k,i)=>{
+          const labels=["新規","機変","MNP転入"];
           const total=entries.reduce((s,e)=>s+(e[k]||0),0);
           return(<div key={k} style={{background:C.gray[50],borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:C.gray[400],marginBottom:2}}>{labels[i]}</div><div style={{fontSize:20,fontWeight:600,color:C.gray[800]}}>{total}</div></div>);
         })}
+        <div style={{background:C.purple[50],borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:C.purple[600],marginBottom:2}}>周辺機器</div><div style={{fontSize:20,fontWeight:600,color:C.purple[800]}}>{peripheralAmount.toLocaleString()}円</div></div>
       </div>
     </div>
   );
@@ -693,8 +704,9 @@ const SalesManagerDash = ({allReports}) => {
   const now = new Date();
   const thisMonth = allReports.filter(r=>{const d=new Date(r.date);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
   const filtered = thisMonth.filter(r=>(!filterAgency||(r.agency||"").includes(filterAgency))&&(!filterStore||(r.storeName||"").includes(filterStore)));
-  const dailyRows = filtered.flatMap(r=>(r.entries||[]).filter(e=>filterCarrier==="all"||e.carrierId===filterCarrier).map(e=>({date:r.date,name:r.displayName,agency:r.agency,store:r.storeName,carrier:e.carrierId,...e}))).sort((a,b)=>b.date.localeCompare(a.date));
+  const dailyRows = filtered.flatMap(r=>(r.entries||[]).filter(e=>filterCarrier==="all"||e.carrierId===filterCarrier).map((e,idx)=>({date:r.date,name:r.displayName,agency:r.agency,store:r.storeName,carrier:e.carrierId,peripheralTotal:idx===0?(r.peripheralTotal||0):0,...e}))).sort((a,b)=>b.date.localeCompare(a.date));
   const carrierTotals = CARRIERS_SALES.map(c=>{const rows=filtered.flatMap(r=>(r.entries||[]).filter(e=>e.carrierId===c.id));return{carrier:c.label,total:rows.reduce((s,e)=>s+salesTotal(e),0),color:CARRIER_COLORS_S[c.id]};}).sort((a,b)=>b.total-a.total);
+  const peripheralMonthTotal = filtered.reduce((s,r)=>s+(r.peripheralTotal||0),0);
   const agencyTotals = Object.entries(filtered.reduce((acc,r)=>{const key=`${r.agency||"未入力"}__${r.storeName||"未入力"}`;if(!acc[key])acc[key]={agency:r.agency||"未入力",store:r.storeName||"未入力",total:0};acc[key].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);return acc;},{})).map(([,v])=>v).sort((a,b)=>b.total-a.total);
   const memberRanking = Object.entries(filtered.reduce((acc,r)=>{if(!acc[r.uid])acc[r.uid]={name:r.displayName,total:0,days:new Set()};acc[r.uid].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);acc[r.uid].days.add(r.date);return acc;},{})).map(([uid,v])=>({uid,...v,days:v.days.size})).sort((a,b)=>b.total-a.total);
   const maxMember=memberRanking[0]?.total||1;
@@ -720,7 +732,7 @@ const SalesManagerDash = ({allReports}) => {
           {dailyRows.length===0?<div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>:(
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","MNP転出","ネット","機器","CC","電気/G","計"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","ネット","CC","電気/G","計","周辺機器"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                 <tbody>{dailyRows.map((r,i)=>(
                   <tr key={i} style={{borderBottom:`0.5px solid ${C.gray[50]}`}}>
                     <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{r.date}</td>
@@ -728,8 +740,9 @@ const SalesManagerDash = ({allReports}) => {
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.agency||"-"}</td>
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.store||"-"}</td>
                     <td style={{padding:"6px 8px"}}><span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:CARRIER_COLORS_S[r.carrier]+"20",color:CARRIER_COLORS_S[r.carrier],fontWeight:500}}>{CARRIERS_SALES.find(c=>c.id===r.carrier)?.label}</span></td>
-                    {["newContract","deviceChange","mnpIn","mnpOut","netLine","peripheral","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
+                    {["newContract","deviceChange","mnpIn","netLine","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
                     <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.purple[800]}}>{salesTotal(r)}</td>
+                    <td style={{padding:"6px 8px",textAlign:"right",color:r.peripheralTotal>0?C.gray[800]:C.gray[200]}}>{r.peripheralTotal?r.peripheralTotal.toLocaleString()+"円":"-"}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -738,16 +751,22 @@ const SalesManagerDash = ({allReports}) => {
         </Card>
       )}
       {tab==="carrier"&&(
-        <Card>
-          <CardTitle>キャリア別集計（今月）</CardTitle>
-          {carrierTotals.map(c=>(
-            <div key={c.carrier} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-              <div style={{width:80,fontSize:12,color:C.gray[800],fontWeight:500,flexShrink:0}}>{c.carrier}</div>
-              <div style={{flex:1,height:8,background:C.gray[100],borderRadius:4}}><div style={{height:"100%",width:`${carrierTotals[0]?.total?(c.total/carrierTotals[0].total)*100:0}%`,background:c.color,borderRadius:4}}/></div>
-              <div style={{fontSize:14,fontWeight:600,color:C.gray[800],minWidth:40,textAlign:"right"}}>{c.total}</div>
-            </div>
-          ))}
-        </Card>
+        <div>
+          <Card>
+            <CardTitle>キャリア別集計（今月）</CardTitle>
+            {carrierTotals.map(c=>(
+              <div key={c.carrier} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:80,fontSize:12,color:C.gray[800],fontWeight:500,flexShrink:0}}>{c.carrier}</div>
+                <div style={{flex:1,height:8,background:C.gray[100],borderRadius:4}}><div style={{height:"100%",width:`${carrierTotals[0]?.total?(c.total/carrierTotals[0].total)*100:0}%`,background:c.color,borderRadius:4}}/></div>
+                <div style={{fontSize:14,fontWeight:600,color:C.gray[800],minWidth:40,textAlign:"right"}}>{c.total}</div>
+              </div>
+            ))}
+          </Card>
+          <Card>
+            <CardTitle>周辺機器売上（今月）</CardTitle>
+            <div style={{fontSize:28,fontWeight:700,color:C.purple[800]}}>{peripheralMonthTotal.toLocaleString()}<span style={{fontSize:14,fontWeight:400,color:C.gray[400]}}>円</span></div>
+          </Card>
+        </div>
       )}
       {tab==="agency"&&(
         <Card>
