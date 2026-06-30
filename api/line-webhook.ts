@@ -65,9 +65,7 @@ const FIELD_LABELS: Record<string, string> = {
   newContract: "新規",
   deviceChange: "機変",
   mnpIn: "MNP転入",
-  mnpOut: "MNP転出",
   netLine: "ネット",
-  peripheral: "機器",
   creditCard: "クレカ",
   energy: "電気/ガス",
 };
@@ -258,14 +256,32 @@ export default async function handler(req: any, res: any) {
           const data = repSnap.data()!;
           const entries: any[] = data.entries || [];
           const total = entries.reduce((s, e) => s + totalOfEntry(e), 0);
+
+          const itemKeys = [
+            "newContract",
+            "deviceChange",
+            "mnpIn",
+            "netLine",
+            "creditCard",
+            "energy",
+          ];
+
           const lines = entries
             .filter((e) => totalOfEntry(e) > 0)
-            .map((e) => `${CARRIER_LABELS[e.carrierId] || e.carrierId}：${totalOfEntry(e)}件`)
-            .join("\n");
+            .map((e) => {
+              const carrierLabel = CARRIER_LABELS[e.carrierId] || e.carrierId;
+              const breakdown = itemKeys
+                .filter((k) => (e[k] || 0) > 0)
+                .map((k) => `${FIELD_LABELS[k]}${e[k]}件`)
+                .join("、");
+              return `■${carrierLabel}\n${breakdown}`;
+            })
+            .join("\n\n");
+
           const peripheralTotal = data.peripheralTotal || 0;
           const peripheralLine =
             peripheralTotal > 0
-              ? `\n周辺機器：${peripheralTotal.toLocaleString()}円`
+              ? `\n\n周辺機器：${peripheralTotal.toLocaleString()}円`
               : "";
           await replyMessage(
             replyToken,
@@ -439,3 +455,4 @@ export default async function handler(req: any, res: any) {
     res.status(200).send("OK");
   }
 }
+
