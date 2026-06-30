@@ -50,6 +50,26 @@ const FIELD_KEYWORDS: Record<string, string> = {
   ガス: "energy",
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  newContract: "新規",
+  deviceChange: "機変",
+  mnpIn: "MNP転入",
+  mnpOut: "MNP転出",
+  netLine: "ネット",
+  peripheral: "機器",
+  creditCard: "クレカ",
+  energy: "電気/ガス",
+};
+
+const CARRIER_LABELS: Record<string, string> = {
+  docomo: "docomo",
+  au: "au",
+  softbank: "SoftBank",
+  ymobile: "ワイモバイル",
+  uq: "UQモバイル",
+  other: "その他",
+};
+
 async function replyMessage(replyToken: string, text: string) {
   await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
@@ -101,6 +121,19 @@ function parseReportText(text: string) {
   return { carrierId, entry, agency: "", storeName };
 }
 
+function totalOfEntry(e: any): number {
+  return [
+    "newContract",
+    "deviceChange",
+    "mnpIn",
+    "mnpOut",
+    "netLine",
+    "peripheral",
+    "creditCard",
+    "energy",
+  ].reduce((s, k) => s + (e[k] || 0), 0);
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
@@ -125,6 +158,9 @@ export default async function handler(req: any, res: any) {
       const text = (event.message.text as string).trim();
       const replyToken = event.replyToken;
 
+      console.log("受信テキスト:", JSON.stringify(text), "文字数:", text.length);
+
+      // ── 本人確認（紐付け）───────────────────────────────
       const linkSnap = await db.collection("lineUsers").doc(lineUserId).get();
 
       if (!linkSnap.exists) {
@@ -168,6 +204,105 @@ export default async function handler(req: any, res: any) {
       const uid = linkData.uid;
       const displayName = linkData.displayName;
 
+      // ── リッチメニュー：フォーマットを見る ─────────────
+      if (text.includes("フォーマット")) {
+        await replyMessage(
+          replyToken,
+          "【報告の書き方】\n\n店舗名＋キャリア名＋件数を自由な文章で送ってください。\n\n例：\n〇〇店でdocomo新規3件、ネット回線1件\n\n複数キャリアを送りたい場合は、メッセージを分けて送ってください。"
+        );
+        continue;
+      }
+
+      // ── リッチメニュー：今日の実績を見る ───────────────
+      if (text === "今日の実績") {
+        const date = todayStr();
+        const repSnap = await db
+          .collection("salesReports")
+          .doc(uid)
+          .collection("daily")
+          .doc(date)
+          .get();
+        if (!repSnap.exists) {
+          await replyMessage(replyToken, "今日はまだ報告がありません。");
+        } else {
+          const data = repSnap.data()!;
+          const entries: any[] = data.entries || [];
+          const total = entries.reduce((s, e) => s + totalOfEntry(e), 0);
+          const lines = entries
+            .filter((e) => totalOfEntry(e) > 0)
+            .map((e) => `${CARRIER_LABELS[e.carrierId] || e.carrierId}：${totalOfEntry(e)}件`)
+            .join("\n");
+          await replyMessage(
+            replyToken,
+            `【本日の実績】\n${lines}\n\n合計：${total}件`
+          );
+        }
+        continue;
+      }
+
+      // ── リッチメニュー：ランキングを見る ───────────────
+      if (text.includes("ランキング")) {
+        const now = new Date();
+        const snap = await db.collectionGroup("daily").get();
+        const totals: Record<string, { name: string; total: number }> = {};
+        snap.forEach((doc) => {
+          const d = doc.data();
+          const dDate = new Date(d.date);
+          if (
+            dDate.getFullYear() !== now.getFullYear() ||
+            dDate.getMonth() !== now.getMonth()
+          )
+            return;
+          const t = (d.entries || []).reduce(
+            (s: number, e: any) => s + totalOfEntry(e),
+            0
+          );
+          if (!totals[d.uid]) totals[d.uid] = { name: d.displayName, total: 0 };
+          totals[d.uid].total += t;
+        });
+        const ranked = Object.values(totals).sort((a, b) => b.total - a.total);
+        if (ranked.length === 0) {
+          await replyMessage(replyToken, "今月のデータはまだありません。");
+        } else {
+          const lines = ranked
+            .slice(0, 5)
+            .map((r, i) => `${i + 1}位 ${r.name}：${r.total}件`)
+            .join("\n");
+          await replyMessage(replyToken, `【今月のランキング】\n${lines}`);
+        }
+        continue;
+      }
+
+      // ── リッチメニュー：今日の報告を修正 ───────────────
+      if (text.includes("修正")) {
+        await replyMessage(
+          replyToken,
+          "修正したい内容を、もう一度同じ形式で送ってください。同じキャリアの件数は上書きされます。\n\n例：docomo新規5件"
+        );
+        continue;
+      }
+
+      // ── リッチメニュー：未入力か確認 ───────────────────
+      if (text.includes("未入力")) {
+        const date = todayStr();
+        const repSnap = await db
+          .collection("salesReports")
+          .doc(uid)
+          .collection("daily")
+          .doc(date)
+          .get();
+        if (!repSnap.exists) {
+          await replyMessage(
+            replyToken,
+            "本日はまだ未入力です。「〇〇店でdocomo新規3件」のように送って報告してください。"
+          );
+        } else {
+          await replyMessage(replyToken, "本日はすでに入力済みです。");
+        }
+        continue;
+      }
+
+      // ── 旧コマンド互換（実績／今日）─────────────────────
       if (text.includes("実績") || text.includes("今日")) {
         const date = todayStr();
         const repSnap = await db
@@ -181,18 +316,7 @@ export default async function handler(req: any, res: any) {
         } else {
           const data = repSnap.data()!;
           const total = (data.entries || []).reduce(
-            (s: number, e: any) =>
-              s +
-              [
-                "newContract",
-                "deviceChange",
-                "mnpIn",
-                "mnpOut",
-                "netLine",
-                "peripheral",
-                "creditCard",
-                "energy",
-              ].reduce((s2, k) => s2 + (e[k] || 0), 0),
+            (s: number, e: any) => s + totalOfEntry(e),
             0
           );
           await replyMessage(replyToken, `本日の合計：${total}件です。`);
@@ -200,6 +324,7 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
+      // ── 件数報告として解析 ──────────────────────────────
       const parsed = parseReportText(text);
       if (!parsed) {
         await replyMessage(
