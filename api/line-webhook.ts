@@ -52,6 +52,11 @@ const FIELD_KEYWORDS: Record<string, string> = {
   mnp転入: "mnpIn",
   mnp転出: "mnpOut",
   転出: "mnpOut",
+  乗り換え: "mnpIn",
+  のりかえ: "mnpIn",
+  乗換え: "mnpIn",
+  乗換: "mnpIn",
+  転換: "mnpIn",
   転入: "mnpIn",
   mnp: "mnpIn",
   番号移行: "portIn",
@@ -162,7 +167,8 @@ function parseReportText(text: string) {
   if (storeMatch) storeName = storeMatch[1];
 
   return {
-    carrierId: carrierId || "other",
+    carrierId: carrierId || null,
+    noCarrier: !carrierId && Object.keys(entry).length > 0,
     entry,
     peripheralAmount,
     agency: "",
@@ -346,11 +352,27 @@ export default async function handler(req: any, res: any) {
       }
 
       // ── リッチメニュー：今日の報告を修正 ───────────────
-      if (text.includes("修正")) {
-        await replyMessage(
-          replyToken,
-          "修正したい内容を、もう一度同じ形式で送ってください。同じキャリアの件数は上書きされます。\n\n例：docomo新規5件"
-        );
+      if (text.includes("修正して") || text === "修正") {
+        if (text.includes("修正して")) {
+          // 今日のデータを削除して入力し直せるようにする
+          const date = todayStr();
+          const ref = db.collection("salesReports").doc(uid).collection("daily").doc(date);
+          const snap = await ref.get();
+          if (snap.exists()) {
+            await ref.delete();
+            await replyMessage(
+              replyToken,
+              "今日の報告をリセットしました！\nもう一度送り直してください。\n\n例：〇〇店でdocomo新規3件、ネット回線1件"
+            );
+          } else {
+            await replyMessage(replyToken, "今日はまだ報告がないので、そのまま送ってください。");
+          }
+        } else {
+          await replyMessage(
+            replyToken,
+            "修正方法は2つあります。\n\n①【上書き修正】\nもう一度同じキャリアの件数を送ると上書きされます。\n例：docomo新規5件\n\n②【全部やり直し】\n「修正して」と送ると今日の報告をリセットできます。"
+          );
+        }
         continue;
       }
 
@@ -406,6 +428,27 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
+      // キャリアが不明な場合は登録せず聞き返す
+      if (parsed.noCarrier) {
+        const itemDesc = Object.entries(parsed.entry)
+          .map(([k, v]) => `${FIELD_LABELS[k]||k}${v}件`)
+          .join("、");
+        await replyMessage(
+          replyToken,
+          `「${itemDesc}」を受け取りましたが、キャリア名が含まれていません。\n\nどのキャリアですか？キャリア名を付けて送り直してください。\n\n例：docomo ${text}`
+        );
+        continue;
+      }
+
+      // キャリアはわかるが項目が読み取れなかった場合
+      if (parsed.carrierId && Object.keys(parsed.entry).length === 0 && parsed.peripheralAmount === 0) {
+        await replyMessage(
+          replyToken,
+          `「${CARRIER_LABELS[parsed.carrierId]||parsed.carrierId}」は認識できましたが、件数や項目が読み取れませんでした。\n\n以下のように送ってください。\n例：docomo 新規3件 MNP1件 ネット回線1件`
+        );
+        continue;
+      }
+
       const date = todayStr();
       const ref = db
         .collection("salesReports")
@@ -416,7 +459,8 @@ export default async function handler(req: any, res: any) {
 
       const existing = snap.exists ? snap.data()! : { entries: [], peripheralTotal: 0 };
       const entries: any[] = existing.entries || [];
-      const idx = entries.findIndex((e) => e.carrierId === parsed.carrierId);
+      const safeCarrierId = parsed.carrierId || "other";
+      const idx = entries.findIndex((e) => e.carrierId === safeCarrierId);
 
       const emptyEntry = (carrierId: string) => ({
         carrierId,
@@ -433,7 +477,7 @@ export default async function handler(req: any, res: any) {
         if (idx >= 0) {
           entries[idx] = { ...entries[idx], ...parsed.entry };
         } else {
-          entries.push({ ...emptyEntry(parsed.carrierId), ...parsed.entry });
+          entries.push({ ...emptyEntry(safeCarrierId), ...parsed.entry });
         }
       }
 
