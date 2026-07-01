@@ -463,9 +463,15 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
   const save = async()=>{
     if(!form.name.trim())return;
     setSaving(true);
-    if(editingId){await onUpdateUser(editingId,{name:form.name,dept:form.dept,grade:form.grade,status:"approved"});}
-    else{await onAddUser(form);}
+    if(editingId){
+      await setDoc(doc(db,"users",editingId),{name:form.name,dept:form.dept,grade:form.grade,status:"approved"},{merge:true});
+    } else {
+      await onAddUser(form);
+    }
     setSaving(false);setShowModal(false);
+  };
+  const approveUser = async(id)=>{
+    await setDoc(doc(db,"users",id),{status:"approved"},{merge:true});
   };
   const remove = async id=>{if(window.confirm("削除しますか？"))await onDeleteUser(id);};
   return (
@@ -477,7 +483,8 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
             <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.amber[50],borderRadius:8,marginBottom:6}}>
               <Avatar name={u.name} idx={i} size={32}/>
               <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div><div style={{fontSize:11,color:C.gray[400]}}>{u.email} · {u.dept} · {u.grade}</div></div>
-              <Btn small onClick={()=>openEdit(u)}>編集・承認</Btn>
+              <Btn small primary onClick={()=>approveUser(u.id)}>承認</Btn>
+              <Btn small onClick={()=>openEdit(u)}>編集</Btn>
             </div>
           ))}
         </div>
