@@ -1,204 +1,554 @@
-name: Daily Ranking Reminder
+// ================================================================
+// api/line-webhook.ts
+// Vercel Serverless Function
+// ================================================================
 
-on:
-  schedule:
-    - cron: '0 5 * * *'   # 14:00 JST
-    - cron: '0 8 * * *'   # 17:00 JST
-    - cron: '0 11 * * *'  # 20:00 JST
-  workflow_dispatch:  # 手動実行も可能
+import crypto from "crypto";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 
-jobs:
-  send-ranking:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send ranking to goal-setting members
-        env:
-          LINE_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-        run: |
-          node << 'EOF'
-          const https = require('https');
-          const crypto = require('crypto');
+if (!getApps().length) {
+  const serviceAccount = JSON.parse(
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}"
+  );
+  initializeApp({ credential: cert(serviceAccount) });
+}
+const db = getFirestore();
 
-          const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-          const projectId = serviceAccount.project_id;
+const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
+const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 
-          async function getAccessToken() {
-            const now = Math.floor(Date.now() / 1000);
-            const header = Buffer.from(JSON.stringify({alg:'RS256',typ:'JWT'})).toString('base64url');
-            const payload = Buffer.from(JSON.stringify({
-              iss: serviceAccount.client_email,
-              scope: 'https://www.googleapis.com/auth/datastore',
-              aud: 'https://oauth2.googleapis.com/token',
-              exp: now + 3600,
-              iat: now
-            })).toString('base64url');
-            const sign = crypto.createSign('RSA-SHA256');
-            sign.update(`${header}.${payload}`);
-            const sig = sign.sign(serviceAccount.private_key, 'base64url');
-            const jwt = `${header}.${payload}.${sig}`;
-            return new Promise((resolve, reject) => {
-              const data = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
-              const req = https.request({
-                hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST',
-                headers: {'Content-Type':'application/x-www-form-urlencoded','Content-Length':data.length}
-              }, res => {
-                let body = '';
-                res.on('data', d => body += d);
-                res.on('end', () => resolve(JSON.parse(body).access_token));
-              });
-              req.on('error', reject);
-              req.write(data); req.end();
-            });
-          }
+const CARRIER_KEYWORDS: Record<string, string> = {
+  docomo: "docomo",
+  ドコモ: "docomo",
+  どこも: "docomo",
+  dm: "docomo",
+  ahamo: "ahamo",
+  アハモ: "ahamo",
+  あはも: "ahamo",
+  au: "au",
+  エーユー: "au",
+  kddi: "au",
+  softbank: "softbank",
+  ソフトバンク: "softbank",
+  そふとばんく: "softbank",
+  sb: "softbank",
+  ymobile: "ymobile",
+  "y!mobile": "ymobile",
+  ワイモバイル: "ymobile",
+  ワイモバ: "ymobile",
+  わいもば: "ymobile",
+  uqモバイル: "uq",
+  uqモバ: "uq",
+  ユーキュー: "uq",
+  uq: "uq",
+};
 
-          async function firestoreGet(token, path) {
-            return new Promise((resolve, reject) => {
-              const req = https.request({
-                hostname: 'firestore.googleapis.com', path, method: 'GET',
-                headers: {'Authorization': `Bearer ${token}`}
-              }, res => {
-                let body = '';
-                res.on('data', d => body += d);
-                res.on('end', () => resolve(JSON.parse(body)));
-              });
-              req.on('error', reject);
-              req.end();
-            });
-          }
+const FIELD_KEYWORDS: Record<string, string> = {
+  新規契約: "newContract",
+  新規: "newContract",
+  機種変更: "deviceChange",
+  機変: "deviceChange",
+  mnp転入: "mnpIn",
+  mnp転出: "mnpOut",
+  転出: "mnpOut",
+  乗り換え: "mnpIn",
+  のりかえ: "mnpIn",
+  乗換え: "mnpIn",
+  乗換: "mnpIn",
+  転換: "mnpIn",
+  転入: "mnpIn",
+  mnp: "mnpIn",
+  番号移行: "portIn",
+  光回線: "netLine",
+  ネット回線: "netLine",
+  インターネット: "netLine",
+  ひかり: "netLine",
+  ネット: "netLine",
+  wifi: "netLine",
+  "wi-fi": "netLine",
+  光: "netLine",
+  paypayカード: "creditCard",
+  ペイペイカード: "creditCard",
+  ぺいぺいかーど: "creditCard",
+  ペイカ: "creditCard",
+  ぺいか: "creditCard",
+  クレジットカード: "creditCard",
+  クレジット: "creditCard",
+  クレカ: "creditCard",
+  cc: "creditCard",
+  カード: "creditCard",
+  電気: "energy",
+  ガス: "energy",
+};
 
-          async function sendLineMessage(lineUserId, message) {
-            return new Promise((resolve) => {
-              const body = JSON.stringify({
-                to: lineUserId,
-                messages: [{type: 'text', text: message}]
-              });
-              const req = https.request({
-                hostname: 'api.line.me', path: '/v2/bot/message/push', method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${process.env.LINE_ACCESS_TOKEN}`,
-                  'Content-Length': Buffer.byteLength(body)
-                }
-              }, res => {
-                let resBody = '';
-                res.on('data', d => resBody += d);
-                res.on('end', () => {
-                  console.log(`Sent to ${lineUserId}: ${res.statusCode}`);
-                  resolve();
-                });
-              });
-              req.on('error', resolve);
-              req.write(body); req.end();
-            });
-          }
+// 周辺機器は「件数」ではなく「金額（円）」で別集計する
+const PERIPHERAL_KEYWORDS = ["周辺機器", "アクセサリ", "機器", "付属品"];
 
-          async function main() {
-            // JSTで今日の日付を取得
-            const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
-            const date = jstNow.toISOString().slice(0,10);
-            const hours = jstNow.getUTCHours();
-            console.log(`Running for date: ${date}, JST hour: ${hours}`);
+const FIELD_LABELS: Record<string, string> = {
+  newContract: "新規",
+  deviceChange: "機変",
+  mnpIn: "MNP転入",
+  portIn: "番号移行",
+  netLine: "ネット",
+  creditCard: "クレカ",
+  energy: "電気/ガス",
+};
 
-            const FIELD_LABELS = {
-              newContract:'新規', deviceChange:'機変', mnpIn:'MNP転入',
-              portIn:'番号移行', netLine:'ネット', creditCard:'クレカ', energy:'電気/ガス'
-            };
+const CARRIER_LABELS: Record<string, string> = {
+  docomo: "docomo",
+  ahamo: "ahamo",
+  au: "au",
+  softbank: "SoftBank",
+  ymobile: "ワイモバイル",
+  uq: "UQモバイル",
+  other: "その他",
+};
 
-            const token = await getAccessToken();
+async function replyMessage(replyToken: string, text: string) {
+  await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "text", text }],
+    }),
+  });
+}
 
-            // 今日の目標を持つユーザーを取得
-            const goalsData = await firestoreGet(token,
-              `/v1/projects/${projectId}/databases/(default)/documents:runQuery`
+function verifySignature(body: string, signature: string): boolean {
+  const hash = crypto
+    .createHmac("sha256", CHANNEL_SECRET)
+    .update(body)
+    .digest("base64");
+  return hash === signature;
+}
+
+const todayStr = () => new Date().toLocaleDateString("sv-SE");
+
+function parseReportText(text: string) {
+  const lower = text.toLowerCase();
+
+  let carrierId: string | null = null;
+  for (const [kw, id] of Object.entries(CARRIER_KEYWORDS)) {
+    if (lower.includes(kw.toLowerCase())) {
+      carrierId = id;
+      break;
+    }
+  }
+
+  const entry: Record<string, number> = {};
+  for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) {
+    const re = new RegExp(`${kw}[^0-9]{0,3}([0-9]+)`, "i");
+    const m = lower.match(re);
+    if (m) entry[key] = parseInt(m[1], 10);
+  }
+
+  // 周辺機器は金額（円）として別枠で抽出する
+  let peripheralAmount = 0;
+  for (const kw of PERIPHERAL_KEYWORDS) {
+    const re = new RegExp(`${kw}[^0-9]{0,5}([0-9,]+)\\s*円?`, "i");
+    const m = text.match(re);
+    if (m) {
+      peripheralAmount = parseInt(m[1].replace(/,/g, ""), 10);
+      break;
+    }
+  }
+
+  if (!carrierId && Object.keys(entry).length === 0 && peripheralAmount === 0) {
+    return null;
+  }
+
+  let storeName = "";
+  const storeMatch = text.match(/(.+?店)で/);
+  if (storeMatch) storeName = storeMatch[1];
+
+  return {
+    carrierId: carrierId || null,
+    noCarrier: !carrierId && Object.keys(entry).length > 0,
+    entry,
+    peripheralAmount,
+    agency: "",
+    storeName,
+  };
+}
+
+function totalOfEntry(e: any): number {
+  return [
+    "newContract",
+    "deviceChange",
+    "mnpIn",
+    "portIn",
+    "netLine",
+    "creditCard",
+    "energy",
+  ].reduce((s, k) => s + (e[k] || 0), 0);
+}
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  try {
+    const signature = req.headers["x-line-signature"] as string;
+    const rawBody = JSON.stringify(req.body);
+
+    if (!signature || !verifySignature(rawBody, signature)) {
+      res.status(401).send("Invalid signature");
+      return;
+    }
+
+    const events = req.body.events || [];
+
+    for (const event of events) {
+      if (event.type !== "message" || event.message.type !== "text") continue;
+
+      const lineUserId = event.source.userId;
+      const text = (event.message.text as string).trim();
+      const replyToken = event.replyToken;
+
+      console.log("受信テキスト:", JSON.stringify(text), "文字数:", text.length);
+
+      // ── 本人確認（紐付け）───────────────────────────────
+      const linkSnap = await db.collection("lineUsers").doc(lineUserId).get();
+
+      if (!linkSnap.exists) {
+        const emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
+        if (emailMatch) {
+          const email = emailMatch[0];
+          const usersSnap = await db
+            .collection("users")
+            .where("email", "==", email)
+            .limit(1)
+            .get();
+
+          if (usersSnap.empty) {
+            await replyMessage(
+              replyToken,
+              "そのメールアドレスは社員登録されていません。アプリに登録済みのメールアドレスを送ってください。"
             );
-
-            // goalsコレクションから今日の目標を取得
-            const goalUsersData = await firestoreGet(token,
-              `/v1/projects/${projectId}/databases/(default)/documents/goals?pageSize=100`
-            );
-
-            const goalUsers = (goalUsersData.documents || []).map(d => d.name.split('/').pop());
-            console.log(`Goal users: ${goalUsers.length}`);
-
-            if (goalUsers.length === 0) {
-              console.log('No users with goals today, skipping.');
-              return;
-            }
-
-            // 各ユーザーの今日の目標と実績を取得してランキング作成
-            const results = [];
-            for (const uid of goalUsers) {
-              // 目標取得
-              let goalTotal = 0; let goalName = '';
-              try {
-                const gData = await firestoreGet(token,
-                  `/v1/projects/${projectId}/databases/(default)/documents/goals/${uid}/daily/${date}`
-                );
-                if (gData.fields) {
-                  goalName = gData.fields.displayName?.stringValue || '';
-                  const goals = gData.fields.goals?.mapValue?.fields || {};
-                  goalTotal = Object.values(goals).reduce((s, v) => s + (v.integerValue || v.doubleValue || 0), 0);
-                }
-              } catch(e) { continue; }
-              if (goalTotal === 0) continue;
-
-              // 実績取得
-              let actual = 0;
-              try {
-                const rData = await firestoreGet(token,
-                  `/v1/projects/${projectId}/databases/(default)/documents/salesReports/${uid}/daily/${date}`
-                );
-                if (rData.fields) {
-                  const entries = rData.fields.entries?.arrayValue?.values || [];
-                  const fields = ['newContract','deviceChange','mnpIn','portIn','netLine','creditCard','energy'];
-                  actual = entries.reduce((s, e) => {
-                    const ef = e.mapValue?.fields || {};
-                    return s + fields.reduce((s2, k) => s2 + (ef[k]?.integerValue || ef[k]?.doubleValue || 0), 0);
-                  }, 0);
-                }
-              } catch(e) {}
-
-              const rate = Math.round((actual / goalTotal) * 100);
-              const remaining = Math.max(0, goalTotal - actual);
-              results.push({uid, name: goalName, actual, goalTotal, rate, remaining});
-            }
-
-            results.sort((a, b) => b.rate - a.rate);
-
-            if (results.length === 0) {
-              console.log('No results to send.');
-              return;
-            }
-
-            const medals = ['🥇','🥈','🥉'];
-            const lines = results.map((r, i) => {
-              const medal = medals[i] || `${i+1}位`;
-              return `${medal} ${r.name}\n　達成率：${r.rate}%（${r.actual}/${r.goalTotal}件）\n　残り：${r.remaining}件`;
-            }).join('\n\n');
-
-            const message = `【${date} ${hours}:00 ランキング】\n\n${lines}`;
-
-            // lineUsersから全LINE User IDを取得
-            const lineUsersData = await firestoreGet(token,
-              `/v1/projects/${projectId}/databases/(default)/documents/lineUsers?pageSize=100`
-            );
-            const lineUserDocs = lineUsersData.documents || [];
-
-            // 目標設定者のLINE IDのみ抽出して送信
-            const goalUidSet = new Set(goalUsers);
-            const targetLineUsers = lineUserDocs.filter(d => {
-              const uid = d.fields?.uid?.stringValue;
-              return uid && goalUidSet.has(uid);
+          } else {
+            const userDoc = usersSnap.docs[0];
+            await db.collection("lineUsers").doc(lineUserId).set({
+              uid: userDoc.id,
+              email,
+              displayName: userDoc.data().name || email,
+              linkedAt: new Date(),
             });
-
-            console.log(`Sending to ${targetLineUsers.length} users`);
-            for (const doc of targetLineUsers) {
-              const lineUserId = doc.name.split('/').pop();
-              await sendLineMessage(lineUserId, message);
-              await new Promise(r => setTimeout(r, 500));
-            }
-            console.log('Done!');
+            await replyMessage(
+              replyToken,
+              `${userDoc.data().name}さん、連携が完了しました！これから「docomo新規3件」のように送ると報告できます。`
+            );
           }
+        } else {
+          await replyMessage(
+            replyToken,
+            "はじめまして！まずアプリに登録しているメールアドレスを送ってください（例：example@company.com）"
+          );
+        }
+        continue;
+      }
 
-          main().catch(console.error);
-          EOF
+      const linkData = linkSnap.data()!;
+      const uid = linkData.uid;
+      const displayName = linkData.displayName;
+
+      // ── リッチメニュー：フォーマットを見る ─────────────
+      if (text.includes("フォーマット")) {
+        await replyMessage(
+          replyToken,
+          "【報告の書き方】\n\n店舗名＋キャリア名＋件数を自由な文章で送ってください。\n\n例：\n〇〇店でdocomo新規3件、ネット回線1件\n\n複数キャリアを送りたい場合は、メッセージを分けて送ってください。"
+        );
+        continue;
+      }
+
+      // ── リッチメニュー：今日の実績を見る ───────────────
+      if (text === "今日の実績") {
+        const date = todayStr();
+        const repSnap = await db
+          .collection("salesReports")
+          .doc(uid)
+          .collection("daily")
+          .doc(date)
+          .get();
+        if (!repSnap.exists) {
+          await replyMessage(replyToken, "今日はまだ報告がありません。");
+        } else {
+          const data = repSnap.data()!;
+          const entries: any[] = data.entries || [];
+          const total = entries.reduce((s, e) => s + totalOfEntry(e), 0);
+
+          const itemKeys = [
+            "newContract",
+            "deviceChange",
+            "mnpIn",
+            "portIn",
+            "netLine",
+            "creditCard",
+            "energy",
+          ];
+
+          const lines = entries
+            .filter((e) => totalOfEntry(e) > 0)
+            .map((e) => {
+              const carrierLabel = CARRIER_LABELS[e.carrierId] || e.carrierId;
+              const breakdown = itemKeys
+                .filter((k) => (e[k] || 0) > 0)
+                .map((k) => `${FIELD_LABELS[k]}${e[k]}件`)
+                .join("、");
+              return `■${carrierLabel}\n${breakdown}`;
+            })
+            .join("\n\n");
+
+          const peripheralTotal = data.peripheralTotal || 0;
+          const peripheralLine =
+            peripheralTotal > 0
+              ? `\n\n周辺機器：${peripheralTotal.toLocaleString()}円`
+              : "";
+          await replyMessage(
+            replyToken,
+            `【本日の実績】\n${lines}${peripheralLine}\n\n合計：${total}件`
+          );
+        }
+        continue;
+      }
+
+      // ── 目標設定 ────────────────────────────────────────
+      if (text.includes("目標")) {
+        const date = todayStr();
+        const goalEntry: Record<string, number> = {};
+        for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) {
+          const re = new RegExp(`${kw}[^0-9]{0,3}([0-9]+)`, "i");
+          const m = text.toLowerCase().match(re);
+          if (m) goalEntry[key] = parseInt(m[1], 10);
+        }
+        if (Object.keys(goalEntry).length === 0) {
+          await replyMessage(replyToken, "目標の件数が読み取れませんでした。\n\n例：目標 新規10件 MNP5件 ネット3件");
+          continue;
+        }
+        await db.collection("goals").doc(uid).collection("daily").doc(date).set({
+          uid, displayName, date, goals: goalEntry, updatedAt: new Date(),
+        });
+        const desc = Object.entries(goalEntry).map(([k,v])=>`${FIELD_LABELS[k]||k}：${v}件`).join("\n");
+        await replyMessage(replyToken, `【本日の目標を設定しました】\n${desc}\n\n実績が入力されるとランキングに反映されます。`);
+        continue;
+      }
+
+      // ── リッチメニュー：ランキングを見る ───────────────
+      if (text.includes("ランキング")) {
+        const date = todayStr();
+        // 今日の実績を取得
+        const repSnap = await db.collectionGroup("daily").get();
+        const todayTotals: Record<string, {name:string; total:number}> = {};
+        repSnap.forEach(doc => {
+          const d = doc.data();
+          if (d.date !== date) return;
+          const t = (d.entries||[]).reduce((s:number,e:any)=>s+totalOfEntry(e),0);
+          if (!todayTotals[d.uid]) todayTotals[d.uid] = {name:d.displayName, total:0};
+          todayTotals[d.uid].total += t;
+        });
+
+        // 今日の目標を取得
+        const goalSnap = await db.collectionGroup("daily").get();
+        const todayGoals: Record<string, {name:string; goalTotal:number}> = {};
+        goalSnap.forEach(doc => {
+          const d = doc.data();
+          if (!d.goals || d.date !== date) return;
+          const g = Object.values(d.goals as Record<string,number>).reduce((s:number,v:number)=>s+v,0);
+          todayGoals[d.uid] = {name:d.displayName, goalTotal:g};
+        });
+
+        // 目標設定者のみランキング対象
+        const ranked = Object.entries(todayGoals).map(([uid,g])=>{
+          const actual = todayTotals[uid]?.total || 0;
+          const rate = g.goalTotal > 0 ? Math.round((actual/g.goalTotal)*100) : 0;
+          const remaining = Math.max(0, g.goalTotal - actual);
+          return {name:g.name, actual, goalTotal:g.goalTotal, rate, remaining};
+        }).sort((a,b)=>b.rate-a.rate);
+
+        if (ranked.length === 0) {
+          await replyMessage(replyToken, "本日はまだ目標を設定しているメンバーがいません。\n\n「目標 新規10件」のように送ると目標設定できます。");
+        } else {
+          const lines = ranked.map((r,i)=>{
+            const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":`${i+1}位`;
+            return `${medal} ${r.name}\n　達成率：${r.rate}%（${r.actual}/${r.goalTotal}件）\n　残り：${r.remaining}件`;
+          }).join("\n\n");
+          await replyMessage(replyToken, `【本日のランキング】\n\n${lines}`);
+        }
+        continue;
+      }
+
+      // ── リッチメニュー：今日の報告を修正 ───────────────
+      if (text.includes("修正して") || text === "修正") {
+        if (text.includes("修正して")) {
+          // 今日のデータを削除して入力し直せるようにする
+          const date = todayStr();
+          const ref = db.collection("salesReports").doc(uid).collection("daily").doc(date);
+          const snap = await ref.get();
+          if (snap.exists()) {
+            await ref.delete();
+            await replyMessage(
+              replyToken,
+              "今日の報告をリセットしました！\nもう一度送り直してください。\n\n例：〇〇店でdocomo新規3件、ネット回線1件"
+            );
+          } else {
+            await replyMessage(replyToken, "今日はまだ報告がないので、そのまま送ってください。");
+          }
+        } else {
+          await replyMessage(
+            replyToken,
+            "修正方法は2つあります。\n\n①【上書き修正】\nもう一度同じキャリアの件数を送ると上書きされます。\n例：docomo新規5件\n\n②【全部やり直し】\n「修正して」と送ると今日の報告をリセットできます。"
+          );
+        }
+        continue;
+      }
+
+      // ── リッチメニュー：未入力か確認 ───────────────────
+      if (text.includes("未入力")) {
+        const date = todayStr();
+        const repSnap = await db
+          .collection("salesReports")
+          .doc(uid)
+          .collection("daily")
+          .doc(date)
+          .get();
+        if (!repSnap.exists) {
+          await replyMessage(
+            replyToken,
+            "本日はまだ未入力です。「〇〇店でdocomo新規3件」のように送って報告してください。"
+          );
+        } else {
+          await replyMessage(replyToken, "本日はすでに入力済みです。");
+        }
+        continue;
+      }
+
+      // ── 旧コマンド互換（実績／今日）─────────────────────
+      if (text.includes("実績") || text.includes("今日")) {
+        const date = todayStr();
+        const repSnap = await db
+          .collection("salesReports")
+          .doc(uid)
+          .collection("daily")
+          .doc(date)
+          .get();
+        if (!repSnap.exists) {
+          await replyMessage(replyToken, "今日はまだ報告がありません。");
+        } else {
+          const data = repSnap.data()!;
+          const total = (data.entries || []).reduce(
+            (s: number, e: any) => s + totalOfEntry(e),
+            0
+          );
+          await replyMessage(replyToken, `本日の合計：${total}件です。`);
+        }
+        continue;
+      }
+
+      // ── 件数報告として解析 ──────────────────────────────
+      const parsed = parseReportText(text);
+      if (!parsed) {
+        await replyMessage(
+          replyToken,
+          "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
+        );
+        continue;
+      }
+
+      // キャリアが不明な場合は登録せず聞き返す
+      if (parsed.noCarrier) {
+        const itemDesc = Object.entries(parsed.entry)
+          .map(([k, v]) => `${FIELD_LABELS[k]||k}${v}件`)
+          .join("、");
+        await replyMessage(
+          replyToken,
+          `「${itemDesc}」を受け取りましたが、キャリア名が含まれていません。\n\nどのキャリアですか？キャリア名を付けて送り直してください。\n\n例：docomo ${text}`
+        );
+        continue;
+      }
+
+      // キャリアはわかるが項目が読み取れなかった場合
+      if (parsed.carrierId && Object.keys(parsed.entry).length === 0 && parsed.peripheralAmount === 0) {
+        await replyMessage(
+          replyToken,
+          `「${CARRIER_LABELS[parsed.carrierId]||parsed.carrierId}」は認識できましたが、件数や項目が読み取れませんでした。\n\n以下のように送ってください。\n例：docomo 新規3件 MNP1件 ネット回線1件`
+        );
+        continue;
+      }
+
+      const date = todayStr();
+      const ref = db
+        .collection("salesReports")
+        .doc(uid)
+        .collection("daily")
+        .doc(date);
+      const snap = await ref.get();
+
+      const existing = snap.exists ? snap.data()! : { entries: [], peripheralTotal: 0 };
+      const entries: any[] = existing.entries || [];
+      const safeCarrierId = parsed.carrierId || "other";
+      const idx = entries.findIndex((e) => e.carrierId === safeCarrierId);
+
+      const emptyEntry = (carrierId: string) => ({
+        carrierId,
+        newContract: 0,
+        deviceChange: 0,
+        mnpIn: 0,
+        portIn: 0,
+        netLine: 0,
+        creditCard: 0,
+        energy: 0,
+      });
+
+      if (Object.keys(parsed.entry).length > 0) {
+        if (idx >= 0) {
+          entries[idx] = { ...entries[idx], ...parsed.entry };
+        } else {
+          entries.push({ ...emptyEntry(safeCarrierId), ...parsed.entry });
+        }
+      }
+
+      const newPeripheralTotal =
+        (existing.peripheralTotal || 0) + (parsed.peripheralAmount || 0);
+
+      await ref.set(
+        {
+          uid,
+          displayName,
+          date,
+          agency: parsed.agency || existing.agency || "",
+          storeName: parsed.storeName || existing.storeName || "",
+          entries,
+          peripheralTotal: newPeripheralTotal,
+          updatedAt: new Date(),
+          createdAt: existing.createdAt || new Date(),
+        },
+        { merge: true }
+      );
+
+      const itemTotal = Object.values(parsed.entry).reduce(
+        (a: number, b) => a + (b as number),
+        0
+      );
+      const parts: string[] = [];
+      if (itemTotal > 0) parts.push(`件数：${itemTotal}件`);
+      if (parsed.peripheralAmount > 0)
+        parts.push(`周辺機器：${parsed.peripheralAmount.toLocaleString()}円`);
+
+      await replyMessage(
+        replyToken,
+        `記録しました！\n${parts.join("\n")}\nアプリでも確認できます。`
+      );
+    }
+
+    res.status(200).send("OK");
+  } catch (err: any) {
+    console.error("Webhook error:", err);
+    res.status(200).send("OK");
+  }
+}
