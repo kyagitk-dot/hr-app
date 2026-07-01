@@ -202,8 +202,8 @@ const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
       return <svg {...common}><circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M14.5 13.2c2.4.4 4.3 2.5 4.5 5.3"/></svg>;
     case "settings":
       return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
-    default:
-      return <svg {...common}><circle cx="12" cy="12" r="9"/></svg>;
+    case "interview":
+      return <svg {...common}><path d="M8 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="13" y2="15"/></svg>;
   }
 };
 
@@ -927,12 +927,142 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
   );
 };
 
+// ── 面談記録ページ ─────────────────────────────────────────────
+const InterviewPage = ({users}) => {
+  const [selectedUid, setSelectedUid] = useState(users[0]?.id||"");
+  const [records, setRecords] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({date:new Date().toLocaleDateString("sv-SE"),content:"",score:"",nextAction:""});
+  const [saving, setSaving] = useState(false);
+  const isMobile = useIsMobile();
+
+  useEffect(()=>{
+    if(!selectedUid) return;
+    const unsub = onSnapshot(
+      collection(db,"interviews",selectedUid,"records"),
+      snap=>{
+        const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
+        recs.sort((a,b)=>b.date.localeCompare(a.date));
+        setRecords(recs);
+      }
+    );
+    return unsub;
+  },[selectedUid]);
+
+  const save = async()=>{
+    if(!form.content.trim()){alert("内容を入力してください");return;}
+    setSaving(true);
+    await setDoc(doc(collection(db,"interviews",selectedUid,"records")),{
+      date:form.date,
+      content:form.content,
+      score:form.score,
+      nextAction:form.nextAction,
+      createdAt:new Date(),
+    });
+    setForm({date:new Date().toLocaleDateString("sv-SE"),content:"",score:"",nextAction:""});
+    setShowForm(false);
+    setSaving(false);
+  };
+
+  const deleteRecord = async(id)=>{
+    if(!window.confirm("この面談記録を削除しますか？"))return;
+    await deleteDoc(doc(db,"interviews",selectedUid,"records",id));
+  };
+
+  const selectedUser = users.find(u=>u.id===selectedUid);
+  const scoreColor = (s)=>{
+    const n=parseInt(s);
+    if(n>=4) return C.teal;
+    if(n>=3) return C.blue;
+    if(n>=2) return C.amber;
+    return C.coral;
+  };
+
+  return (
+    <div>
+      {/* メンバー選択 */}
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+        <SelectEl value={selectedUid} onChange={setSelectedUid} options={users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))} style={{flex:1,minWidth:140}}/>
+        <Btn primary onClick={()=>setShowForm(true)}>+ 面談を記録</Btn>
+      </div>
+
+      {/* 入力フォーム（モーダル） */}
+      {showForm&&<Modal title="面談記録を追加" onClose={()=>setShowForm(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>日付</div>
+            <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
+              style={{width:"100%",height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:14,color:C.gray[800],fontFamily:"inherit"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>面談内容</div>
+            <Textarea value={form.content} onChange={v=>setForm(f=>({...f,content:v}))} rows={4} placeholder="面談の内容・気になった点・現状などを記録"/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>スコア（1〜5）</div>
+            <div style={{display:"flex",gap:6}}>
+              {[1,2,3,4,5].map(n=>(
+                <button key={n} onClick={()=>setForm(f=>({...f,score:String(n)}))}
+                  style={{width:40,height:40,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:600,
+                  background:form.score===String(n)?C.purple[400]:C.gray[100],
+                  color:form.score===String(n)?"#fff":C.gray[400]}}>{n}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>ネクストアクション</div>
+            <Textarea value={form.nextAction} onChange={v=>setForm(f=>({...f,nextAction:v}))} rows={2} placeholder="次回までにやること・フォローアップ内容"/>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowForm(false)}>キャンセル</Btn>
+            <Btn primary onClick={save} disabled={saving}>{saving?"保存中...":"保存"}</Btn>
+          </div>
+        </div>
+      </Modal>}
+
+      {/* 面談記録一覧 */}
+      {records.length===0?(
+        <div style={{textAlign:"center",padding:"3rem 1rem",color:C.gray[400],fontSize:14,background:C.gray[50],borderRadius:12}}>
+          {selectedUser?.name}さんの面談記録はまだありません。<br/>「+ 面談を記録」から追加してください。
+        </div>
+      ):(
+        <div>
+          <div style={{fontSize:12,color:C.gray[400],marginBottom:10}}>{selectedUser?.name}さんの面談記録（{records.length}件）</div>
+          {records.map(r=>(
+            <Card key={r.id} style={{borderLeft:`3px solid ${r.score?scoreColor(r.score)[400]:C.gray[200]}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{r.date}</span>
+                  {r.score&&(
+                    <span style={{fontSize:12,padding:"2px 10px",borderRadius:12,background:scoreColor(r.score)[50],color:scoreColor(r.score)[800],fontWeight:600}}>
+                      スコア {r.score}
+                    </span>
+                  )}
+                </div>
+                <button onClick={()=>deleteRecord(r.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.gray[400],fontSize:16}}>×</button>
+              </div>
+              <div style={{fontSize:13,color:C.gray[800],lineHeight:1.7,marginBottom:r.nextAction?10:0,whiteSpace:"pre-wrap"}}>{r.content}</div>
+              {r.nextAction&&(
+                <div style={{background:C.purple[50],borderRadius:8,padding:"8px 12px",marginTop:8}}>
+                  <div style={{fontSize:11,color:C.purple[600],fontWeight:500,marginBottom:3}}>ネクストアクション</div>
+                  <div style={{fontSize:13,color:C.purple[900],lineHeight:1.6,whiteSpace:"pre-wrap"}}>{r.nextAction}</div>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MANAGER_NAV = [
   {id:"dashboard",label:"ダッシュボード",shortLabel:"ホーム",icon:"home"},
   {id:"evaluation",label:"評価フォーム",shortLabel:"評価",icon:"edit"},
   {id:"results",label:"結果・集計",shortLabel:"集計",icon:"grid"},
   {id:"ai",label:"AI分析",shortLabel:"AI",icon:"spark"},
   {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
+  {id:"interview",label:"面談記録",shortLabel:"面談",icon:"interview"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
   {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
@@ -1014,7 +1144,7 @@ export default function App() {
   const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",users:"メンバー管理",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",users:"メンバー管理",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
@@ -1027,6 +1157,7 @@ export default function App() {
       {page==="results"&&<ResultsPage users={users} evals={evals}/>}
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports}/>}
+      {page==="interview"&&<InterviewPage users={users}/>}
       {page==="users"&&<UserManagePage users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} departments={settings.departments||DEPARTMENTS_DEFAULT}/>}
       {page==="settings"&&<SettingsPage currentUser={authUser} departments={settings.departments||DEPARTMENTS_DEFAULT} setDepartments={d=>setSettings(s=>({...s,departments:d}))} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT} setGradeDefs={g=>setSettings(s=>({...s,gradeDefs:g}))} periods={settings.periods||PERIODS_DEFAULT} setPeriods={p=>setSettings(s=>({...s,periods:p}))} onSaveSettings={onSaveSettings}/>}
     </AppShell>
