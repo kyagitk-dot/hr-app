@@ -484,18 +484,18 @@ const AIPage = ({users,evals,gradeDefs}) => {
 const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments}) => {
   const [showModal,setShowModal] = useState(false);
   const [editingId,setEditingId] = useState(null);
-  const [form,setForm] = useState({name:"",dept:departments[0]||"",grade:"G1",email:"",password:""});
+  const [form,setForm] = useState({name:"",dept:departments[0]||"",grade:"G1",email:"",password:"",isManager:false});
   const [saving,setSaving] = useState(false);
   const [showBuddyModal,setShowBuddyModal] = useState(false);
   const [buddyTarget,setBuddyTarget] = useState(null); // バディを設定するメンバー
   const [selectedBuddy,setSelectedBuddy] = useState(""); // 選んだバディ上司のUID
-  const openNew = ()=>{setEditingId(null);setForm({name:"",dept:departments[0]||"",grade:"G1",email:"",password:""});setShowModal(true);};
-  const openEdit = u=>{setEditingId(u.id);setForm({name:u.name,dept:u.dept,grade:u.grade,email:u.email||"",password:""});setShowModal(true);};
+  const openNew = ()=>{setEditingId(null);setForm({name:"",dept:departments[0]||"",grade:"G1",email:"",password:"",isManager:false});setShowModal(true);};
+  const openEdit = u=>{setEditingId(u.id);setForm({name:u.name,dept:u.dept,grade:u.grade,email:u.email||"",password:"",isManager:u.role==="manager"});setShowModal(true);};
   const save = async()=>{
     if(!form.name.trim())return;
     setSaving(true);
     if(editingId){
-      await setDoc(doc(db,"users",editingId),{name:form.name,dept:form.dept,grade:form.grade,status:"approved"},{merge:true});
+      await setDoc(doc(db,"users",editingId),{name:form.name,dept:form.dept,grade:form.grade,status:"approved",role:form.isManager?"manager":"member"},{merge:true});
     } else {
       await onAddUser(form);
     }
@@ -559,7 +559,7 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
             <Avatar name={u.name} idx={i} size={32}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div>
-              <div style={{fontSize:11,color:C.gray[400]}}>{u.dept} · <span style={{color:C.purple[600],fontWeight:500}}>{u.grade}</span></div>
+              <div style={{fontSize:11,color:C.gray[400]}}>{u.dept} · <span style={{color:C.purple[600],fontWeight:500}}>{u.grade}</span>{u.role==="manager"&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:10,background:C.purple[50],color:C.purple[800],fontWeight:600}}>管理者</span>}</div>
               {buddyUser&&<div style={{fontSize:11,color:C.teal[800],marginTop:2}}>👥 バディ上司：{buddyUser.name}</div>}
               {u.buddyOf?.length>0&&<div style={{fontSize:11,color:C.blue[800],marginTop:2}}>📋 担当メンバー：{u.buddyOf.map(id=>users.find(m=>m.id===id)?.name||"").filter(Boolean).join("、")}</div>}
             </div>
@@ -590,6 +590,15 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
           <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>名前</div><Input value={form.name} onChange={v=>setForm(f=>({...f,name:v}))} placeholder="例：山田 太郎"/></div>
           <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>部署</div><SelectEl value={form.dept} onChange={v=>setForm(f=>({...f,dept:v}))} options={departments} style={{width:"100%"}}/></div>
           <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>等級</div><SelectEl value={form.grade} onChange={v=>setForm(f=>({...f,grade:v}))} options={GRADES} style={{width:"100%"}}/></div>
+          {editingId&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:form.isManager?C.purple[50]:C.gray[50],borderRadius:8,border:`0.5px solid ${form.isManager?C.purple[200]:C.gray[200]}`}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:500,color:form.isManager?C.purple[800]:C.gray[800]}}>管理者権限</div>
+              <div style={{fontSize:11,color:C.gray[400],marginTop:2}}>ONにすると管理者画面が使えるようになります</div>
+            </div>
+            <button onClick={()=>setForm(f=>({...f,isManager:!f.isManager}))} style={{width:44,height:24,borderRadius:12,border:"none",cursor:"pointer",background:form.isManager?C.purple[400]:C.gray[200],position:"relative",transition:"background 0.2s",flexShrink:0}}>
+              <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:form.isManager?23:3,transition:"left 0.2s"}}/>
+            </button>
+          </div>}
           {!editingId&&<><div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>メールアドレス</div><Input value={form.email} onChange={v=>setForm(f=>({...f,email:v}))} placeholder="user@example.com" type="email"/></div><div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>初期パスワード</div><Input value={form.password} onChange={v=>setForm(f=>({...f,password:v}))} placeholder="6文字以上"/></div></>}
           <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}><Btn onClick={()=>setShowModal(false)}>キャンセル</Btn><Btn primary onClick={save} disabled={saving}>{saving?"保存中...":"保存"}</Btn></div>
         </div>
@@ -1635,7 +1644,7 @@ export default function App() {
   useEffect(()=>{
     if(!userProfile||userProfile.role!=="manager")return;
     const unsub = onSnapshot(collection(db,"users"),snap=>{
-      const u=snap.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.role!=="manager");
+      const u=snap.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.email!=="info.mooa01@gmail.com");
       setUsers(u);
       if(u.length&&!selectedUserId) setSelectedUserId(u[0].id);
     });
