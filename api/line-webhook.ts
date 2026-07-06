@@ -492,15 +492,11 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      // 代理店名・店舗名がない場合は聞き返す
-      if (parsed.noStore) {
-        const carrierLabel = CARRIER_LABELS[parsed.carrierId||""] || parsed.carrierId || "";
-        const itemDesc = Object.entries(parsed.entry)
-          .map(([k,v])=>`${FIELD_LABELS[k]||k}${v}件`)
-          .join("、");
+      // キャリアはわかるが項目が読み取れなかった場合
+      if (parsed.carrierId && Object.keys(parsed.entry).length === 0 && parsed.peripheralAmount === 0) {
         await replyMessage(
           replyToken,
-          `${carrierLabel ? `「${carrierLabel} ${itemDesc}」` : `「${itemDesc}」`}を受け取りましたが、代理店名・店舗名が含まれていません。\n\n店舗名を含めて送り直してください。\n\n例：〇〇店で${carrierLabel} ${itemDesc}`
+          `「${CARRIER_LABELS[parsed.carrierId]||parsed.carrierId}」は認識できましたが、件数や項目が読み取れませんでした。\n\n以下のように送ってください。\n例：〇〇店でdocomo 新規3件 MNP1件`
         );
         continue;
       }
@@ -512,6 +508,40 @@ export default async function handler(req: any, res: any) {
         .collection("daily")
         .doc(date);
       const snap = await ref.get();
+
+      // 代理店名・店舗名がない場合の処理
+      if (parsed.noStore) {
+        // 今日すでに店舗名が登録済みなら引き継ぐ
+        if (snap.exists()) {
+          const existingData = snap.data()!;
+          if (existingData.storeName || existingData.agency) {
+            parsed.storeName = existingData.storeName || "";
+            parsed.agency = existingData.agency || "";
+          } else {
+            // 今日のデータはあるが店舗名がない→聞き返す
+            const carrierLabel = CARRIER_LABELS[parsed.carrierId||""] || parsed.carrierId || "";
+            const itemDesc = Object.entries(parsed.entry)
+              .map(([k,v])=>`${FIELD_LABELS[k]||k}${v}件`)
+              .join("、");
+            await replyMessage(
+              replyToken,
+              `${carrierLabel ? `「${carrierLabel} ${itemDesc}」` : `「${itemDesc}」`}を受け取りましたが、代理店名・店舗名が含まれていません。\n\n店舗名を含めて送り直してください。\n\n例：〇〇店で${carrierLabel} ${itemDesc}`
+            );
+            continue;
+          }
+        } else {
+          // 今日初めての報告で店舗名なし→聞き返す
+          const carrierLabel = CARRIER_LABELS[parsed.carrierId||""] || parsed.carrierId || "";
+          const itemDesc = Object.entries(parsed.entry)
+            .map(([k,v])=>`${FIELD_LABELS[k]||k}${v}件`)
+            .join("、");
+          await replyMessage(
+            replyToken,
+            `${carrierLabel ? `「${carrierLabel} ${itemDesc}」` : `「${itemDesc}」`}を受け取りましたが、代理店名・店舗名が含まれていません。\n\n店舗名を含めて送り直してください。\n\n例：〇〇店で${carrierLabel} ${itemDesc}`
+          );
+          continue;
+        }
+      }
 
       const existing = snap.exists ? snap.data()! : { entries: [], peripheralTotal: 0 };
       const entries: any[] = existing.entries || [];
