@@ -826,6 +826,10 @@ const SalesManagerDash = ({allReports}) => {
   const [filterAgency,setFilterAgency] = useState("");
   const [filterStore,setFilterStore] = useState("");
   const [filterCarrier,setFilterCarrier] = useState("all");
+  const [filterPerson,setFilterPerson] = useState("all");
+  const [periodMode,setPeriodMode] = useState("month"); // "month" | "range"
+  const [dateFrom,setDateFrom] = useState(new Date().toLocaleDateString("sv-SE").slice(0,7)+"-01");
+  const [dateTo,setDateTo] = useState(new Date().toLocaleDateString("sv-SE"));
   const [deleting,setDeleting] = useState(null);
   const now = new Date();
 
@@ -838,25 +842,108 @@ const SalesManagerDash = ({allReports}) => {
       setDeleting(null);
     }
   };
-  const thisMonth = allReports.filter(r=>{const d=new Date(r.date);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
-  const filtered = thisMonth.filter(r=>(!filterAgency||(r.agency||"").includes(filterAgency))&&(!filterStore||(r.storeName||"").includes(filterStore)));
+
+  // 期間フィルター
+  const periodFiltered = allReports.filter(r=>{
+    if(periodMode==="month"){
+      const d=new Date(r.date);
+      return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
+    } else {
+      return r.date>=dateFrom && r.date<=dateTo;
+    }
+  });
+
+  // 人一覧
+  const personList = [...new Map(periodFiltered.map(r=>[r.uid,{uid:r.uid,name:r.displayName}])).values()].sort((a,b)=>a.name.localeCompare(b.name));
+
+  const filtered = periodFiltered.filter(r=>
+    (!filterAgency||(r.agency||"").includes(filterAgency))&&
+    (!filterStore||(r.storeName||"").includes(filterStore))&&
+    (filterPerson==="all"||r.uid===filterPerson)
+  );
+
   const dailyRows = filtered.flatMap(r=>(r.entries||[]).filter(e=>filterCarrier==="all"||e.carrierId===filterCarrier).map((e,idx)=>({uid:r.uid,date:r.date,name:r.displayName,agency:r.agency,store:r.storeName,carrier:e.carrierId,peripheralTotal:idx===0?(r.peripheralTotal||0):0,...e}))).sort((a,b)=>b.date.localeCompare(a.date));
   const carrierTotals = CARRIERS_SALES.map(c=>{const rows=filtered.flatMap(r=>(r.entries||[]).filter(e=>e.carrierId===c.id));return{carrier:c.label,total:rows.reduce((s,e)=>s+salesTotal(e),0),color:CARRIER_COLORS_S[c.id]};}).sort((a,b)=>b.total-a.total);
   const peripheralMonthTotal = filtered.reduce((s,r)=>s+(r.peripheralTotal||0),0);
   const agencyTotals = Object.entries(filtered.reduce((acc,r)=>{const key=`${r.agency||"未入力"}__${r.storeName||"未入力"}`;if(!acc[key])acc[key]={agency:r.agency||"未入力",store:r.storeName||"未入力",total:0};acc[key].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);return acc;},{})).map(([,v])=>v).sort((a,b)=>b.total-a.total);
   const memberRanking = Object.entries(filtered.reduce((acc,r)=>{if(!acc[r.uid])acc[r.uid]={name:r.displayName,total:0,days:new Set()};acc[r.uid].total+=(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0);acc[r.uid].days.add(r.date);return acc;},{})).map(([uid,v])=>({uid,...v,days:v.days.size})).sort((a,b)=>b.total-a.total);
   const maxMember=memberRanking[0]?.total||1;
+
+  // Excel出力
+  const exportExcel = () => {
+    const XLSX = (window as any).XLSX;
+    if(!XLSX){alert("Excel出力ライブラリの読み込み中です。しばらくお待ちください。");return;}
+    const wb = XLSX.utils.book_new();
+
+    // 日別シート
+    const dailyData = [
+      ["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","番号移行","ネット","クレカ","電気/ガス","合計","周辺機器(円)"],
+      ...dailyRows.map(r=>[r.date,r.name,r.agency||"",r.store||"",CARRIERS_SALES.find(c=>c.id===r.carrier)?.label||r.carrier,r.newContract||0,r.deviceChange||0,r.mnpIn||0,r.portIn||0,r.netLine||0,r.creditCard||0,r.energy||0,salesTotal(r),r.peripheralTotal||0])
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dailyData), "日別一覧");
+
+    // キャリア別シート
+    const carrierData = [
+      ["キャリア","合計件数"],
+      ...carrierTotals.map(c=>[c.carrier,c.total]),
+      ["周辺機器(円)",peripheralMonthTotal],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(carrierData), "キャリア別");
+
+    // 代理店別シート
+    const agencyData = [
+      ["代理店","店舗","合計件数"],
+      ...agencyTotals.map(a=>[a.agency,a.store,a.total])
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(agencyData), "代理店別");
+
+    // 人別シート
+    const memberData = [
+      ["氏名","合計件数","稼働日数"],
+      ...memberRanking.map(r=>[r.name,r.total,r.days])
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(memberData), "人別");
+
+    const period = periodMode==="month"?`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}`:`${dateFrom}_${dateTo}`;
+    XLSX.writeFile(wb, `販売実績_${period}.xlsx`);
+  };
+
+  // XLSXライブラリを動的に読み込む
+  if(!(window as any).XLSX){
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    document.head.appendChild(script);
+  }
+
   const tabStyle=t=>({padding:"7px 14px",fontSize:12,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t?C.purple[50]:"transparent",color:tab===t?C.purple[800]:C.gray[600],fontWeight:tab===t?500:400});
   return (
     <div>
       <Card>
+        {/* 期間フィルター */}
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          {[{id:"month",label:"今月"},{id:"range",label:"期間指定"}].map(m=>(
+            <button key={m.id} onClick={()=>setPeriodMode(m.id)} style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontFamily:"inherit",border:periodMode===m.id?`1.5px solid ${C.purple[400]}`:`0.5px solid ${C.gray[200]}`,background:periodMode===m.id?C.purple[50]:"#fff",color:periodMode===m.id?C.purple[800]:C.gray[600],cursor:"pointer"}}>{m.label}</button>
+          ))}
+        </div>
+        {periodMode==="range"&&(
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
+            <span style={{fontSize:12,color:C.gray[400]}}>〜</span>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
+          </div>
+        )}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          <input value={filterAgency} onChange={e=>setFilterAgency(e.target.value)} placeholder="代理店で絞り込み" style={{flex:1,minWidth:120,height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}/>
-          <input value={filterStore} onChange={e=>setFilterStore(e.target.value)} placeholder="店舗で絞り込み" style={{flex:1,minWidth:120,height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}/>
+          <input value={filterAgency} onChange={e=>setFilterAgency(e.target.value)} placeholder="代理店で絞り込み" style={{flex:1,minWidth:100,height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}/>
+          <input value={filterStore} onChange={e=>setFilterStore(e.target.value)} placeholder="店舗で絞り込み" style={{flex:1,minWidth:100,height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}/>
           <select value={filterCarrier} onChange={e=>setFilterCarrier(e.target.value)} style={{height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}>
             <option value="all">全キャリア</option>
             {CARRIERS_SALES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
+          <select value={filterPerson} onChange={e=>setFilterPerson(e.target.value)} style={{height:32,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:12,color:C.gray[800],fontFamily:"inherit"}}>
+            <option value="all">全員</option>
+            {personList.map(p=><option key={p.uid} value={p.uid}>{p.name}</option>)}
+          </select>
+          <button onClick={exportExcel} style={{height:32,padding:"0 12px",background:C.teal[400],color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:500,flexShrink:0}}>📥 Excel出力</button>
         </div>
       </Card>
       <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:10,padding:4,marginBottom:14,flexWrap:"wrap"}}>
