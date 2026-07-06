@@ -163,15 +163,26 @@ function parseReportText(text: string) {
   }
 
   let storeName = "";
-  const storeMatch = text.match(/(.+?店)で/);
+  let agency = "";
+
+  // 「〇〇店で」「〇〇店舗で」パターン
+  const storeMatch = text.match(/(.+?(?:店|店舗))(?:で|にて|の)/);
   if (storeMatch) storeName = storeMatch[1];
+
+  // 「〇〇エージェント」「〇〇代理店」パターン
+  const agencyMatch = text.match(/(.+?(?:エージェント|代理店|ショップ|テクノロジー|サービス))/);
+  if (agencyMatch) agency = agencyMatch[1];
+
+  // 店舗名も代理店名もない場合はフラグを立てる
+  const noStore = !storeName && !agency;
 
   return {
     carrierId: carrierId || null,
     noCarrier: !carrierId && Object.keys(entry).length > 0,
+    noStore,
     entry,
     peripheralAmount,
-    agency: "",
+    agency,
     storeName,
   };
 }
@@ -476,7 +487,20 @@ export default async function handler(req: any, res: any) {
       if (parsed.carrierId && Object.keys(parsed.entry).length === 0 && parsed.peripheralAmount === 0) {
         await replyMessage(
           replyToken,
-          `「${CARRIER_LABELS[parsed.carrierId]||parsed.carrierId}」は認識できましたが、件数や項目が読み取れませんでした。\n\n以下のように送ってください。\n例：docomo 新規3件 MNP1件 ネット回線1件`
+          `「${CARRIER_LABELS[parsed.carrierId]||parsed.carrierId}」は認識できましたが、件数や項目が読み取れませんでした。\n\n以下のように送ってください。\n例：〇〇店でdocomo 新規3件 MNP1件`
+        );
+        continue;
+      }
+
+      // 代理店名・店舗名がない場合は聞き返す
+      if (parsed.noStore) {
+        const carrierLabel = CARRIER_LABELS[parsed.carrierId||""] || parsed.carrierId || "";
+        const itemDesc = Object.entries(parsed.entry)
+          .map(([k,v])=>`${FIELD_LABELS[k]||k}${v}件`)
+          .join("、");
+        await replyMessage(
+          replyToken,
+          `${carrierLabel ? `「${carrierLabel} ${itemDesc}」` : `「${itemDesc}」`}を受け取りましたが、代理店名・店舗名が含まれていません。\n\n店舗名を含めて送り直してください。\n\n例：〇〇店で${carrierLabel} ${itemDesc}`
         );
         continue;
       }
