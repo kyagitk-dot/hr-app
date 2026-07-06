@@ -874,38 +874,98 @@ const SalesManagerDash = ({allReports}) => {
     const XLSX = (window as any).XLSX;
     if(!XLSX){alert("Excel出力ライブラリの読み込み中です。しばらくお待ちください。");return;}
     const wb = XLSX.utils.book_new();
+    const today = new Date().toLocaleDateString("ja-JP");
+    const periodLabel = periodMode==="month"
+      ? `${now.getFullYear()}年${now.getMonth()+1}月`
+      : `${dateFrom} 〜 ${dateTo}`;
+    const personLabel = filterPerson==="all" ? "全員" : (personList.find(p=>p.uid===filterPerson)?.name||"");
+    const agencyLabel = filterAgency || "全代理店";
 
-    // 日別シート
-    const dailyData = [
-      ["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","番号移行","ネット","クレカ","電気/ガス","合計","周辺機器(円)"],
-      ...dailyRows.map(r=>[r.date,r.name,r.agency||"",r.store||"",CARRIERS_SALES.find(c=>c.id===r.carrier)?.label||r.carrier,r.newContract||0,r.deviceChange||0,r.mnpIn||0,r.portIn||0,r.netLine||0,r.creditCard||0,r.energy||0,salesTotal(r),r.peripheralTotal||0])
+    // ── 日別明細シート ──────────────────────────────────────
+    const dailySheet = [
+      [`販売実績明細レポート`],
+      [`出力日：${today}　　対象期間：${periodLabel}　　対象：${agencyLabel} / ${personLabel}`],
+      [],
+      ["日付","氏名","代理店","店舗","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレジットカード","電気・ガス","合計件数","周辺機器売上(円)"],
+      ...dailyRows.map(r=>[
+        r.date, r.name, r.agency||"", r.store||"",
+        CARRIERS_SALES.find(c=>c.id===r.carrier)?.label||r.carrier,
+        r.newContract||0, r.deviceChange||0, r.mnpIn||0, r.portIn||0,
+        r.netLine||0, r.creditCard||0, r.energy||0,
+        salesTotal(r), r.peripheralTotal||0
+      ]),
+      [],
+      ["合計", "", "", "", "",
+        dailyRows.reduce((s,r)=>s+(r.newContract||0),0),
+        dailyRows.reduce((s,r)=>s+(r.deviceChange||0),0),
+        dailyRows.reduce((s,r)=>s+(r.mnpIn||0),0),
+        dailyRows.reduce((s,r)=>s+(r.portIn||0),0),
+        dailyRows.reduce((s,r)=>s+(r.netLine||0),0),
+        dailyRows.reduce((s,r)=>s+(r.creditCard||0),0),
+        dailyRows.reduce((s,r)=>s+(r.energy||0),0),
+        dailyRows.reduce((s,r)=>s+salesTotal(r),0),
+        dailyRows.reduce((s,r)=>s+(r.peripheralTotal||0),0),
+      ],
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dailyData), "日別一覧");
-
-    // キャリア別シート
-    const carrierData = [
-      ["キャリア","合計件数"],
-      ...carrierTotals.map(c=>[c.carrier,c.total]),
-      ["周辺機器(円)",peripheralMonthTotal],
+    const ws1 = XLSX.utils.aoa_to_sheet(dailySheet);
+    ws1["!cols"] = [
+      {wch:12},{wch:12},{wch:16},{wch:14},{wch:14},
+      {wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:8},{wch:14}
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(carrierData), "キャリア別");
+    XLSX.utils.book_append_sheet(wb, ws1, "日別明細");
 
-    // 代理店別シート
-    const agencyData = [
+    // ── キャリア別集計シート ────────────────────────────────
+    const carrierSheet = [
+      [`キャリア別集計レポート`],
+      [`出力日：${today}　　対象期間：${periodLabel}　　対象：${agencyLabel} / ${personLabel}`],
+      [],
+      ["キャリア","合計件数","構成比(%)"],
+      ...carrierTotals.map(c=>{
+        const total=carrierTotals.reduce((s,x)=>s+x.total,0);
+        return [c.carrier, c.total, total>0?Math.round((c.total/total)*100):0];
+      }),
+      [],
+      ["周辺機器売上合計(円)", peripheralMonthTotal, ""],
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(carrierSheet);
+    ws2["!cols"] = [{wch:16},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws2, "キャリア別集計");
+
+    // ── 代理店・店舗別集計シート ────────────────────────────
+    const agencySheet = [
+      [`代理店・店舗別集計レポート`],
+      [`出力日：${today}　　対象期間：${periodLabel}`],
+      [],
       ["代理店","店舗","合計件数"],
-      ...agencyTotals.map(a=>[a.agency,a.store,a.total])
+      ...agencyTotals.map(a=>[a.agency, a.store, a.total]),
+      [],
+      ["合計", "", agencyTotals.reduce((s,a)=>s+a.total,0)],
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(agencyData), "代理店別");
+    const ws3 = XLSX.utils.aoa_to_sheet(agencySheet);
+    ws3["!cols"] = [{wch:20},{wch:16},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws3, "代理店別集計");
 
-    // 人別シート
-    const memberData = [
-      ["氏名","合計件数","稼働日数"],
-      ...memberRanking.map(r=>[r.name,r.total,r.days])
+    // ── 人別集計シート ──────────────────────────────────────
+    const memberSheet = [
+      [`スタッフ別集計レポート`],
+      [`出力日：${today}　　対象期間：${periodLabel}　　対象：${agencyLabel}`],
+      [],
+      ["氏名","合計件数","稼働日数","1日平均"],
+      ...memberRanking.map(r=>[
+        r.name, r.total, r.days,
+        r.days>0?Math.round((r.total/r.days)*10)/10:0
+      ]),
+      [],
+      ["合計", memberRanking.reduce((s,r)=>s+r.total,0), "", ""],
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(memberData), "人別");
+    const ws4 = XLSX.utils.aoa_to_sheet(memberSheet);
+    ws4["!cols"] = [{wch:14},{wch:10},{wch:10},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws4, "スタッフ別集計");
 
-    const period = periodMode==="month"?`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}`:`${dateFrom}_${dateTo}`;
-    XLSX.writeFile(wb, `販売実績_${period}.xlsx`);
+    const period = periodMode==="month"
+      ? `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}`
+      : `${dateFrom}_${dateTo}`;
+    XLSX.writeFile(wb, `販売実績レポート_${period}.xlsx`);
   };
 
   // XLSXライブラリを動的に読み込む
