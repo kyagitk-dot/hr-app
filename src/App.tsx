@@ -202,6 +202,8 @@ const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
       return <svg {...common}><circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M14.5 13.2c2.4.4 4.3 2.5 4.5 5.3"/></svg>;
     case "settings":
       return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
+    case "linesend":
+      return <svg {...common}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/></svg>;
     case "training":
       return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/><path d="M9.5 3.5A8.5 8.5 0 0 1 20.5 12"/><path d="M14.5 20.5A8.5 8.5 0 0 1 3.5 12"/></svg>;
     case "interview":
@@ -1468,6 +1470,105 @@ const InterviewPage = ({users}) => {
   );
 };
 
+// ── LINE送信ページ ─────────────────────────────────────────────
+const LineSendPage = () => {
+  const [lineUsers, setLineUsers] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const [sendMode, setSendMode] = useState("all"); // "all" | "select"
+
+  const TEMPLATES = [
+    {label:"挨拶・使い方説明", text:"お疲れ様です！\nこのLINEボットで日次の件数報告ができます。\n\n📱報告フォーマット：\n「〇〇店でdocomo新規3件 MNP1件」\nのように送ってください。\n\nご不明な点があればお知らせください。"},
+    {label:"フォーマット案内", text:"【件数報告フォーマット】\n\n店舗名＋キャリア＋項目＋件数\n\n例①：〇〇店でdocomo新規3件 MNP1件\n例②：〇〇店でワイモバイル 機変2件 クレカ1件\n\nキャリア：docomo/ahamo/au/SoftBank/ワイモバイル/UQ\n項目：新規/機変/MNP転入/番号移行/ネット/クレカ/電気・ガス"},
+    {label:"目標入力リマインド", text:"お疲れ様です！\n本日の目標をまだ入力していない方は入力をお願いします。\n\n例：目標 新規10件 MNP5件"},
+    {label:"月末集計のお知らせ", text:"今月も残りわずかです！\n報告漏れがないか確認をお願いします。\n\n「今日の実績を見る」ボタンで本日の報告内容を確認できます。"},
+  ];
+
+  useEffect(()=>{
+    const unsub = onSnapshot(collection(db,"lineUsers"),snap=>{
+      setLineUsers(snap.docs.map(d=>({lineUserId:d.id,...d.data()})));
+    });
+    return unsub;
+  },[]);
+
+  const toggleSelect = (id)=>{
+    setSelectedIds(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
+  };
+
+  const send = async()=>{
+    if(!message.trim()){alert("メッセージを入力してください");return;}
+    const targets = sendMode==="all" ? lineUsers.map(u=>u.lineUserId) : selectedIds;
+    if(targets.length===0){alert("送信先を選択してください");return;}
+    if(!window.confirm(`${targets.length}名にLINEを送信します。よろしいですか？`))return;
+    setSending(true);setResult(null);
+    try{
+      const res = await fetch("/api/send-line",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({lineUserIds:targets,message}),
+      });
+      const data = await res.json();
+      setResult(data);
+    }catch{
+      setResult({error:"通信エラーが発生しました。"});
+    }finally{
+      setSending(false);
+    }
+  };
+
+  return (
+    <div>
+      <Card>
+        <CardTitle>送信先</CardTitle>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {[{id:"all",label:`全員（${lineUsers.length}名）`},{id:"select",label:"個別選択"}].map(m=>(
+            <button key={m.id} onClick={()=>setSendMode(m.id)} style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontFamily:"inherit",border:sendMode===m.id?`1.5px solid ${C.purple[400]}`:`0.5px solid ${C.gray[200]}`,background:sendMode===m.id?C.purple[50]:"#fff",color:sendMode===m.id?C.purple[800]:C.gray[600],cursor:"pointer"}}>{m.label}</button>
+          ))}
+        </div>
+        {sendMode==="select"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+            {lineUsers.length===0?<div style={{fontSize:13,color:C.gray[400]}}>LINE連携済みのユーザーがいません</div>:
+            lineUsers.map(u=>(
+              <label key={u.lineUserId} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:selectedIds.includes(u.lineUserId)?C.purple[50]:C.gray[50],borderRadius:8,cursor:"pointer"}}>
+                <input type="checkbox" checked={selectedIds.includes(u.lineUserId)} onChange={()=>toggleSelect(u.lineUserId)} style={{accentColor:C.purple[400]}}/>
+                <span style={{fontSize:13,color:C.gray[800]}}>{u.displayName||"未設定"}</span>
+                {u.isGuest&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:C.amber[50],color:C.amber[800]}}>業務委託</span>}
+              </label>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardTitle>テンプレート</CardTitle>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:0}}>
+          {TEMPLATES.map(t=>(
+            <button key={t.label} onClick={()=>setMessage(t.text)} style={{padding:"6px 12px",borderRadius:8,fontSize:12,fontFamily:"inherit",border:`0.5px solid ${C.gray[200]}`,background:"#fff",color:C.gray[600],cursor:"pointer"}}>{t.label}</button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>メッセージ</CardTitle>
+        <Textarea value={message} onChange={setMessage} rows={6} placeholder="送信するメッセージを入力してください"/>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+          <Btn primary onClick={send} disabled={sending||!message.trim()}>
+            {sending?"送信中...":`✉️ ${sendMode==="all"?`全員（${lineUsers.length}名）`:`選択した${selectedIds.length}名`}に送信`}
+          </Btn>
+        </div>
+      </Card>
+
+      {result&&(
+        <div style={{background:result.error?C.coral[50]:C.green[50],border:`0.5px solid ${result.error?C.coral[200]:C.green[400]}`,borderRadius:12,padding:"14px 16px",fontSize:13,color:result.error?C.coral[800]:C.green[800]}}>
+          {result.error?`エラー：${result.error}`:`✓ ${result.successCount}/${result.total}名に送信しました`}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MANAGER_NAV = [
   {id:"dashboard",label:"ダッシュボード",shortLabel:"ホーム",icon:"home"},
   {id:"evaluation",label:"評価フォーム",shortLabel:"評価",icon:"edit"},
@@ -1476,8 +1577,9 @@ const MANAGER_NAV = [
   {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
   {id:"interview",label:"面談記録",shortLabel:"面談",icon:"interview"},
   {id:"training",label:"研修PDCA",shortLabel:"研修",icon:"training"},
+  {id:"linesend",label:"LINE送信",shortLabel:"LINE",icon:"linesend"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
-  {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
+  {id:"settings",label:"設定",shortLabel:"設定\",icon:\"settings"},
 ];
 
 export default function App() {
@@ -1557,7 +1659,7 @@ export default function App() {
   const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",training:"研修PDCA",users:"メンバー管理",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
@@ -1572,6 +1674,7 @@ export default function App() {
       {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports}/>}
       {page==="interview"&&<InterviewPage users={users}/>}
       {page==="training"&&<TrainingPDCAPage users={users}/>}
+      {page==="linesend"&&<LineSendPage/>}
       {page==="users"&&<UserManagePage users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} departments={settings.departments||DEPARTMENTS_DEFAULT}/>}
       {page==="settings"&&<SettingsPage currentUser={authUser} departments={settings.departments||DEPARTMENTS_DEFAULT} setDepartments={d=>setSettings(s=>({...s,departments:d}))} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT} setGradeDefs={g=>setSettings(s=>({...s,gradeDefs:g}))} periods={settings.periods||PERIODS_DEFAULT} setPeriods={p=>setSettings(s=>({...s,periods:p}))} onSaveSettings={onSaveSettings}/>}
     </AppShell>
