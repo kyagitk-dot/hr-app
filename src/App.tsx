@@ -484,6 +484,9 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
   const [editingId,setEditingId] = useState(null);
   const [form,setForm] = useState({name:"",dept:departments[0]||"",grade:"G1",email:"",password:""});
   const [saving,setSaving] = useState(false);
+  const [showBuddyModal,setShowBuddyModal] = useState(false);
+  const [buddyTarget,setBuddyTarget] = useState(null); // バディを設定するメンバー
+  const [selectedBuddy,setSelectedBuddy] = useState(""); // 選んだバディ上司のUID
   const openNew = ()=>{setEditingId(null);setForm({name:"",dept:departments[0]||"",grade:"G1",email:"",password:""});setShowModal(true);};
   const openEdit = u=>{setEditingId(u.id);setForm({name:u.name,dept:u.dept,grade:u.grade,email:u.email||"",password:""});setShowModal(true);};
   const save = async()=>{
@@ -500,6 +503,36 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
     await setDoc(doc(db,"users",id),{status:"approved"},{merge:true});
   };
   const remove = async id=>{if(window.confirm("削除しますか？"))await onDeleteUser(id);};
+
+  const openBuddyModal = (u)=>{
+    setBuddyTarget(u);
+    setSelectedBuddy(u.buddyUid||"");
+    setShowBuddyModal(true);
+  };
+  const saveBuddy = async()=>{
+    if(!buddyTarget) return;
+    // メンバー側にバディ上司のUIDを保存
+    await setDoc(doc(db,"users",buddyTarget.id),{buddyUid:selectedBuddy||null},{merge:true});
+    // バディ上司側に担当メンバーリストを更新
+    if(selectedBuddy){
+      const buddySnap = await getDoc(doc(db,"users",selectedBuddy));
+      const buddyData = buddySnap.data()||{};
+      const buddyOf = buddyData.buddyOf||[];
+      if(!buddyOf.includes(buddyTarget.id)){
+        await setDoc(doc(db,"users",selectedBuddy),{buddyOf:[...buddyOf,buddyTarget.id]},{merge:true});
+      }
+    }
+    // 以前のバディ上司から削除
+    const prevBuddyUid = buddyTarget.buddyUid;
+    if(prevBuddyUid && prevBuddyUid !== selectedBuddy){
+      const prevSnap = await getDoc(doc(db,"users",prevBuddyUid));
+      const prevData = prevSnap.data()||{};
+      const prevBuddyOf = (prevData.buddyOf||[]).filter(id=>id!==buddyTarget.id);
+      await setDoc(doc(db,"users",prevBuddyUid),{buddyOf:prevBuddyOf},{merge:true});
+    }
+    setShowBuddyModal(false);
+  };
+
   return (
     <div>
       {users.filter(u=>u.status==="pending").length>0&&(
@@ -517,15 +550,39 @@ const UserManagePage = ({users,onAddUser,onUpdateUser,onDeleteUser,departments})
       )}
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn primary onClick={openNew}>+ メンバーを追加</Btn></div>
       <Card>
-        {users.map((u,i)=>(
+        {users.map((u,i)=>{
+          const buddyUser = u.buddyUid ? users.find(b=>b.id===u.buddyUid) : null;
+          return (
           <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<users.length-1?`0.5px solid ${C.gray[50]}`:"none"}}>
             <Avatar name={u.name} idx={i} size={32}/>
-            <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div><div style={{fontSize:11,color:C.gray[400]}}>{u.dept} · <span style={{color:C.purple[600],fontWeight:500}}>{u.grade}</span></div>{u.email&&<div style={{fontSize:11,color:C.gray[400]}}>{u.email}</div>}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{u.name}</div>
+              <div style={{fontSize:11,color:C.gray[400]}}>{u.dept} · <span style={{color:C.purple[600],fontWeight:500}}>{u.grade}</span></div>
+              {buddyUser&&<div style={{fontSize:11,color:C.teal[800],marginTop:2}}>👥 バディ上司：{buddyUser.name}</div>}
+              {u.buddyOf?.length>0&&<div style={{fontSize:11,color:C.blue[800],marginTop:2}}>📋 担当メンバー：{u.buddyOf.map(id=>users.find(m=>m.id===id)?.name||"").filter(Boolean).join("、")}</div>}
+            </div>
+            <Btn small onClick={()=>openBuddyModal(u)}>バディ設定</Btn>
             <Btn small onClick={()=>openEdit(u)}>編集</Btn>
             <Btn small danger onClick={()=>remove(u.id)}>削除</Btn>
           </div>
-        ))}
+          );
+        })}
       </Card>
+
+      {/* バディ設定モーダル */}
+      {showBuddyModal&&buddyTarget&&<Modal title={`${buddyTarget.name}のバディ上司を設定`} onClose={()=>setShowBuddyModal(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:13,color:C.gray[600]}}>バディ上司に設定したメンバーは、{buddyTarget.name}さんの研修PDCAを入力できるようになります。</div>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:6}}>バディ上司を選択</div>
+            <SelectEl value={selectedBuddy} onChange={setSelectedBuddy} options={[{value:"",label:"未設定"},...users.filter(u=>u.id!==buddyTarget.id).map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))]} style={{width:"100%"}}/>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowBuddyModal(false)}>キャンセル</Btn>
+            <Btn primary onClick={saveBuddy}>保存</Btn>
+          </div>
+        </div>
+      </Modal>}
       {showModal&&<Modal title={editingId?"メンバーを編集":"メンバーを追加"} onClose={()=>setShowModal(false)}>
         <div style={{display:"flex",flexDirection:"column",gap:13}}>
           <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>名前</div><Input value={form.name} onChange={v=>setForm(f=>({...f,name:v}))} placeholder="例：山田 太郎"/></div>
@@ -918,8 +975,10 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
     {id:"myeval",label:"自己評価",shortLabel:"評価",icon:"edit"},
     {id:"myresult",label:"評価結果",shortLabel:"結果",icon:"grid"},
     {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
+    {id:"mytraining",label:"研修PDCA",shortLabel:"研修",icon:"training"},
+    ...(userProfile?.buddyOf?.length>0?[{id:"buddytraining",label:"バディ入力",shortLabel:"バディ",icon:"users"}]:[]),
   ];
-  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績"};
+  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績",mytraining:"研修PDCA",buddytraining:"バディ担当 研修PDCA"};
 
   return (
     <AppShell nav={EMP_NAV} page={page} setPage={setPage} currentUser={{...currentUser,displayName:userProfile?.name,role:"member",grade:userProfile?.grade}} activePeriod={activePeriod} onLogout={onLogout} pageTitle={pageTitles[page]}>
@@ -949,7 +1008,181 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
           {evalData.promotion&&<Card><CardTitle>昇格推薦可否</CardTitle><div style={{fontSize:14,fontWeight:500,color:C.purple[800]}}>{evalData.promotion}</div></Card>}
         </div>
       )}
+      {page==="mytraining"&&<EmployeeTrainingPage uid={currentUser.uid}/>}
+      {page==="buddytraining"&&userProfile?.buddyOf?.map(memberId=><BuddyTrainingPage key={memberId} memberId={memberId}/>)}
     </AppShell>
+  );
+};
+
+// ── バディ上司用 研修PDCA入力ページ ───────────────────────────
+const BuddyTrainingPage = ({memberId}) => {
+  const [memberName, setMemberName] = useState("");
+  const [records, setRecords] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({title:"",startDate:new Date().toLocaleDateString("sv-SE"),endDate:"",plan:"",do_:"",check:"",act:"",status:"進行中"});
+  const [saving, setSaving] = useState(false);
+  const STATUSES = ["進行中","完了","中断"];
+
+  useEffect(()=>{
+    if(!memberId) return;
+    getDoc(doc(db,"users",memberId)).then(snap=>{
+      if(snap.exists()) setMemberName(snap.data().name||"");
+    });
+    const unsub = onSnapshot(collection(db,"trainingPDCA",memberId,"records"),snap=>{
+      const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
+      recs.sort((a,b)=>(b.startDate||"").localeCompare(a.startDate||""));
+      setRecords(recs);
+    });
+    return unsub;
+  },[memberId]);
+
+  const openNew = ()=>{setEditingId(null);setForm({title:"",startDate:new Date().toLocaleDateString("sv-SE"),endDate:"",plan:"",do_:"",check:"",act:"",status:"進行中"});setShowForm(true);};
+  const openEdit = (r)=>{setEditingId(r.id);setForm({title:r.title||"",startDate:r.startDate||"",endDate:r.endDate||"",plan:r.plan||"",do_:r.do_||"",check:r.check||"",act:r.act||"",status:r.status||"進行中"});setShowForm(true);};
+
+  const save = async()=>{
+    if(!form.title.trim()||!form.plan.trim()){alert("研修名と計画（Plan）は必須です");return;}
+    setSaving(true);
+    const data={title:form.title,startDate:form.startDate,endDate:form.endDate,plan:form.plan,do_:form.do_,check:form.check,act:form.act,status:form.status,updatedAt:new Date()};
+    if(editingId){await setDoc(doc(db,"trainingPDCA",memberId,"records",editingId),data,{merge:true});}
+    else{await setDoc(doc(collection(db,"trainingPDCA",memberId,"records")),{...data,createdAt:new Date()});}
+    setShowForm(false);setSaving(false);
+  };
+
+  const deleteRecord = async(id)=>{if(!window.confirm("この研修記録を削除しますか？"))return;await deleteDoc(doc(db,"trainingPDCA",memberId,"records",id));};
+  const statusColor=(s)=>s==="完了"?C.teal:s==="中断"?C.coral:C.blue;
+
+  return (
+    <div style={{marginBottom:20}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
+        <div style={{fontSize:14,fontWeight:600,color:C.gray[800]}}>👥 {memberName}さんの研修PDCA</div>
+        <Btn primary small onClick={openNew}>+ 研修を追加</Btn>
+      </div>
+      {showForm&&<Modal title={editingId?"研修PDCAを編集":"研修PDCAを追加"} onClose={()=>setShowForm(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>研修名 *</div><input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="例：新人研修・OJT" style={{width:"100%",height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:14,color:C.gray[800],fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>開始日</div><input type="date" value={form.startDate} onChange={e=>setForm(f=>({...f,startDate:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
+            <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>終了日</div><input type="date" value={form.endDate} onChange={e=>setForm(f=>({...f,endDate:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
+            <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>ステータス</div><SelectEl value={form.status} onChange={v=>setForm(f=>({...f,status:v}))} options={STATUSES.map(s=>({value:s,label:s}))}/></div>
+          </div>
+          <div><div style={{fontSize:12,color:C.blue[800],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div><Textarea value={form.plan} onChange={v=>setForm(f=>({...f,plan:v}))} rows={3} placeholder="例：docomo端末の提案力を高めるため、週2回のロープレを実施する。"/></div>
+          <div><div style={{fontSize:12,color:C.teal[800],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div><Textarea value={form.do_} onChange={v=>setForm(f=>({...f,do_:v}))} rows={3} placeholder="例：週2回のロープレを3週間実施。先輩からフィードバックをもらった。"/></div>
+          <div><div style={{fontSize:12,color:C.amber[800],fontWeight:600,marginBottom:4}}>🔍 Check（評価）</div><Textarea value={form.check} onChange={v=>setForm(f=>({...f,check:v}))} rows={3} placeholder="例：新規2件・MNP1件を達成。光回線の提案が苦手であることが判明。"/></div>
+          <div><div style={{fontSize:12,color:C.purple[600],fontWeight:600,marginBottom:4}}>🔄 Act（改善）</div><Textarea value={form.act} onChange={v=>setForm(f=>({...f,act:v}))} rows={3} placeholder="例：来月は光回線の提案に特化した練習を追加する。"/></div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn onClick={()=>setShowForm(false)}>キャンセル</Btn><Btn primary onClick={save} disabled={saving}>{saving?"保存中...":"保存"}</Btn></div>
+        </div>
+      </Modal>}
+      {records.length===0?(
+        <div style={{textAlign:"center",padding:"2rem 1rem",color:C.gray[400],fontSize:13,background:C.gray[50],borderRadius:12}}>まだ研修記録がありません。「+ 研修を追加」から追加してください。</div>
+      ):(
+        records.map(r=>(
+          <Card key={r.id} style={{borderLeft:`3px solid ${statusColor(r.status)[400]}`}}>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:C.gray[800],marginBottom:3}}>{r.title}</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,padding:"2px 8px",borderRadius:12,background:statusColor(r.status)[50],color:statusColor(r.status)[800],fontWeight:600}}>{r.status}</span>
+                  <span style={{fontSize:11,color:C.gray[400]}}>{r.startDate}{r.endDate?` 〜 ${r.endDate}`:""}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                <button onClick={()=>openEdit(r)} style={{border:`0.5px solid ${C.gray[200]}`,background:"#fff",borderRadius:6,padding:"3px 8px",fontSize:11,cursor:"pointer",color:C.gray[600],fontFamily:"inherit"}}>編集</button>
+                <button onClick={()=>deleteRecord(r.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.gray[400],fontSize:14}}>×</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {[["📋 Plan",r.plan,C.blue],["✅ Do",r.do_,C.teal],["🔍 Check",r.check,C.amber],["🔄 Act",r.act,C.purple]].map(([label,val,color])=>(
+                <div key={label} style={{background:color[50],borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,fontWeight:600,color:color[800],marginBottom:3}}>{label}</div>
+                  <div style={{fontSize:12,color:C.gray[800],lineHeight:1.5,whiteSpace:"pre-wrap"}}>{val||<span style={{color:C.gray[300]}}>未入力</span>}</div>
+                </div>
+              ))}
+            </div>
+            {r.employeeComment&&<div style={{marginTop:8,background:C.purple[50],borderRadius:6,padding:"8px 10px"}}><div style={{fontSize:10,fontWeight:600,color:C.purple[600],marginBottom:3}}>💬 本人コメント</div><div style={{fontSize:12,color:C.purple[900],lineHeight:1.5}}>{r.employeeComment}</div></div>}
+          </Card>
+        ))
+      )}
+    </div>
+  );
+};
+
+// ── 社員向け研修PDCAページ（閲覧＋コメントのみ）──────────────
+const EmployeeTrainingPage = ({uid}) => {
+  const [records, setRecords] = useState([]);
+  const [commentInputs, setCommentInputs] = useState({});
+  const [savingComment, setSavingComment] = useState(null);
+
+  useEffect(()=>{
+    if(!uid) return;
+    const unsub = onSnapshot(
+      collection(db,"trainingPDCA",uid,"records"),
+      snap=>{
+        const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
+        recs.sort((a,b)=>(b.startDate||"").localeCompare(a.startDate||""));
+        setRecords(recs);
+      }
+    );
+    return unsub;
+  },[uid]);
+
+  const saveComment = async(recordId, comment)=>{
+    setSavingComment(recordId);
+    await setDoc(doc(db,"trainingPDCA",uid,"records",recordId),{employeeComment:comment},{merge:true});
+    setSavingComment(null);
+  };
+
+  const statusColor = (s)=>s==="完了"?C.teal:s==="中断"?C.coral:C.blue;
+
+  return (
+    <div>
+      {records.length===0?(
+        <div style={{textAlign:"center",padding:"3rem 1rem",color:C.gray[400],fontSize:14,background:C.gray[50],borderRadius:12}}>
+          まだ研修PDCAが登録されていません。<br/>上司からの入力をお待ちください。
+        </div>
+      ):(
+        <div>
+          <div style={{fontSize:12,color:C.gray[400],marginBottom:10}}>研修PDCA（{records.length}件）</div>
+          {records.map(r=>(
+            <Card key={r.id} style={{borderLeft:`3px solid ${statusColor(r.status)[400]}`}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.gray[800],marginBottom:4}}>{r.title}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:statusColor(r.status)[50],color:statusColor(r.status)[800],fontWeight:600}}>{r.status}</span>
+                    <span style={{fontSize:11,color:C.gray[400]}}>{r.startDate}{r.endDate?` 〜 ${r.endDate}`:""}</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+                {[["📋 Plan（計画）",r.plan,C.blue],["✅ Do（実行）",r.do_,C.teal],["🔍 Check（評価）",r.check,C.amber],["🔄 Act（改善）",r.act,C.purple]].map(([label,val,color])=>(
+                  <div key={label} style={{background:color[50],borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:11,fontWeight:600,color:color[800],marginBottom:4}}>{label}</div>
+                    <div style={{fontSize:12,color:C.gray[800],lineHeight:1.6,whiteSpace:"pre-wrap"}}>{val||<span style={{color:C.gray[300]}}>未入力</span>}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{borderTop:`0.5px solid ${C.gray[100]}`,paddingTop:10}}>
+                <div style={{fontSize:12,color:C.purple[600],fontWeight:500,marginBottom:6}}>💬 自分のコメント</div>
+                {r.employeeComment&&<div style={{fontSize:13,color:C.gray[800],lineHeight:1.6,background:C.purple[50],borderRadius:8,padding:"8px 12px",marginBottom:8,whiteSpace:"pre-wrap"}}>{r.employeeComment}</div>}
+                <div style={{display:"flex",gap:8}}>
+                  <textarea
+                    value={commentInputs[r.id]||""}
+                    onChange={e=>setCommentInputs(prev=>({...prev,[r.id]:e.target.value}))}
+                    placeholder="感想・質問・気づきを入力してください"
+                    rows={2}
+                    style={{flex:1,padding:"8px 10px",fontSize:13,border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontFamily:"inherit",resize:"vertical",outline:"none"}}
+                  />
+                  <Btn primary small onClick={()=>saveComment(r.id, commentInputs[r.id]||"")} disabled={savingComment===r.id||!commentInputs[r.id]?.trim()}>
+                    {savingComment===r.id?"保存中":"送信"}
+                  </Btn>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
