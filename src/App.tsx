@@ -1050,19 +1050,19 @@ const TrainingPDCAPage = ({users}) => {
           </div>
           <div>
             <div style={{fontSize:12,color:C.blue[600],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div>
-            <Textarea value={form.plan} onChange={v=>setForm(f=>({...f,plan:v}))} rows={3} placeholder="研修の目標・計画内容を入力"/>
+            <Textarea value={form.plan} onChange={v=>setForm(f=>({...f,plan:v}))} rows={3} placeholder="例：docomo端末の提案力を高めるため、週2回のロープレを実施する。月末までに新規3件・MNP2件を目標とする。"/>
           </div>
           <div>
             <div style={{fontSize:12,color:C.teal[600],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div>
-            <Textarea value={form.do_} onChange={v=>setForm(f=>({...f,do_:v}))} rows={3} placeholder="実際に行った研修内容・実施状況"/>
+            <Textarea value={form.do_} onChange={v=>setForm(f=>({...f,do_:v}))} rows={3} placeholder="例：週2回のロープレを3週間実施。先輩から料金プランの説明方法についてフィードバックをもらい、クロージングトークを改善した。"/>
           </div>
           <div>
             <div style={{fontSize:12,color:C.amber[700],fontWeight:600,marginBottom:4}}>🔍 Check（評価）</div>
-            <Textarea value={form.check} onChange={v=>setForm(f=>({...f,check:v}))} rows={3} placeholder="研修の成果・課題・気づき"/>
+            <Textarea value={form.check} onChange={v=>setForm(f=>({...f,check:v}))} rows={3} placeholder="例：新規2件・MNP1件を達成。目標には届かなかったが、光回線の提案が苦手であることが判明。お客様への料金説明は自信がついてきた。"/>
           </div>
           <div>
             <div style={{fontSize:12,color:C.purple[600],fontWeight:600,marginBottom:4}}>🔄 Act（改善）</div>
-            <Textarea value={form.act} onChange={v=>setForm(f=>({...f,act:v}))} rows={3} placeholder="次のアクション・改善点"/>
+            <Textarea value={form.act} onChange={v=>setForm(f=>({...f,act:v}))} rows={3} placeholder="例：来月は光回線の提案に特化した練習を追加する。先輩の光回線商談に同席させてもらい、成功トークを学ぶ。"/>
           </div>
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <Btn onClick={()=>setShowForm(false)}>キャンセル</Btn>
