@@ -878,24 +878,42 @@ const SalesManagerDash = ({allReports}) => {
     const periodLabel = periodMode==="month"
       ? `${now.getFullYear()}年${now.getMonth()+1}月`
       : `${dateFrom} 〜 ${dateTo}`;
-    const personLabel = filterPerson==="all" ? "全員" : (personList.find(p=>p.uid===filterPerson)?.name||"");
-    const agencyLabel = filterAgency || "全代理店";
+    const personLabel = filterPerson==="all" ? "全スタッフ" : (personList.find(p=>p.uid===filterPerson)?.name||"");
+
+    // スタイル定義
+    const headerStyle = {font:{bold:true,color:{rgb:"FFFFFF"},sz:11},fill:{fgColor:{rgb:"4A4A6A"}},alignment:{horizontal:"center",vertical:"center"},border:{bottom:{style:"thin",color:{rgb:"CCCCCC"}}}};
+    const subHeaderStyle = {font:{bold:true,color:{rgb:"333333"},sz:10},fill:{fgColor:{rgb:"F0F0F0"}},alignment:{horizontal:"center"},border:{bottom:{style:"thin",color:{rgb:"CCCCCC"}},top:{style:"thin",color:{rgb:"CCCCCC"}}}};
+    const cellStyle = {font:{sz:10,color:{rgb:"333333"}},alignment:{vertical:"center"},border:{bottom:{style:"thin",color:{rgb:"EEEEEE"}}}};
+    const numStyle = {font:{sz:10,color:{rgb:"333333"}},alignment:{horizontal:"right",vertical:"center"},border:{bottom:{style:"thin",color:{rgb:"EEEEEE"}}}};
+    const totalStyle = {font:{bold:true,sz:10,color:{rgb:"4A4A6A"}},fill:{fgColor:{rgb:"EEEEF8"}},alignment:{horizontal:"right"},border:{top:{style:"medium",color:{rgb:"4A4A6A"}}}};
+    const titleStyle = {font:{bold:true,sz:14,color:{rgb:"4A4A6A"}},alignment:{horizontal:"left"}};
+    const infoStyle = {font:{sz:9,color:{rgb:"888888"}}};
+
+    const applyStyle = (ws: any, data: any[][], styles: any[][]) => {
+      data.forEach((row, r) => {
+        row.forEach((_, c) => {
+          const cellRef = XLSX.utils.encode_cell({r, c});
+          if(!ws[cellRef]) ws[cellRef] = {v:"", t:"s"};
+          if(styles[r]?.[c]) ws[cellRef].s = styles[r][c];
+        });
+      });
+    };
 
     // ── 日別明細シート ──────────────────────────────────────
-    const dailySheet = [
-      [`販売実績明細レポート`],
-      [`出力日：${today}　　対象期間：${periodLabel}　　対象：${agencyLabel} / ${personLabel}`],
+    const dailyData = [
+      [`販売実績レポート`, "", "", "", "", "", "", "", "", "", "", "", ""],
+      [`対象期間：${periodLabel}　　対象：${personLabel}　　出力日：${today}`, "", "", "", "", "", "", "", "", "", "", "", ""],
       [],
-      ["日付","氏名","代理店","店舗","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレジットカード","電気・ガス","合計件数","周辺機器売上(円)"],
+      ["日付","氏名","店舗","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレカ","電気・ガス","合計件数","周辺機器(円)"],
       ...dailyRows.map(r=>[
-        r.date, r.name, r.agency||"", r.store||"",
+        r.date, r.name, r.store||"",
         CARRIERS_SALES.find(c=>c.id===r.carrier)?.label||r.carrier,
         r.newContract||0, r.deviceChange||0, r.mnpIn||0, r.portIn||0,
         r.netLine||0, r.creditCard||0, r.energy||0,
         salesTotal(r), r.peripheralTotal||0
       ]),
       [],
-      ["合計", "", "", "", "",
+      ["合計", "", "", "",
         dailyRows.reduce((s,r)=>s+(r.newContract||0),0),
         dailyRows.reduce((s,r)=>s+(r.deviceChange||0),0),
         dailyRows.reduce((s,r)=>s+(r.mnpIn||0),0),
@@ -907,59 +925,70 @@ const SalesManagerDash = ({allReports}) => {
         dailyRows.reduce((s,r)=>s+(r.peripheralTotal||0),0),
       ],
     ];
-    const ws1 = XLSX.utils.aoa_to_sheet(dailySheet);
-    ws1["!cols"] = [
-      {wch:12},{wch:12},{wch:16},{wch:14},{wch:14},
-      {wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:8},{wch:14}
-    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(dailyData);
+    ws1["!cols"] = [{wch:12},{wch:12},{wch:14},{wch:14},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:10},{wch:8},{wch:12}];
+    ws1["!merges"] = [{s:{r:0,c:0},e:{r:0,c:12}},{s:{r:1,c:0},e:{r:1,c:12}}];
+    // スタイル適用
+    const totalRow = dailyData.length - 1;
+    const headerRow = 3;
+    dailyData[headerRow].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:headerRow,c}); if(ws1[ref]) ws1[ref].s=subHeaderStyle; });
+    dailyData.slice(4, totalRow).forEach((_,ri)=>{ dailyData[4+ri].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:4+ri,c}); if(ws1[ref]) ws1[ref].s=c<4?cellStyle:numStyle; }); });
+    dailyData[totalRow].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:totalRow,c}); if(ws1[ref]) ws1[ref].s=totalStyle; });
+    const t0=XLSX.utils.encode_cell({r:0,c:0}); if(ws1[t0]) ws1[t0].s=titleStyle;
+    const i0=XLSX.utils.encode_cell({r:1,c:0}); if(ws1[i0]) ws1[i0].s=infoStyle;
     XLSX.utils.book_append_sheet(wb, ws1, "日別明細");
 
     // ── キャリア別集計シート ────────────────────────────────
-    const carrierSheet = [
-      [`キャリア別集計レポート`],
-      [`出力日：${today}　　対象期間：${periodLabel}　　対象：${agencyLabel} / ${personLabel}`],
+    const totalCarrier = carrierTotals.reduce((s,c)=>s+c.total,0);
+    const carrierData = [
+      ["キャリア別集計", "", ""],
+      [`対象期間：${periodLabel}　　出力日：${today}`, "", ""],
       [],
       ["キャリア","合計件数","構成比(%)"],
-      ...carrierTotals.map(c=>{
-        const total=carrierTotals.reduce((s,x)=>s+x.total,0);
-        return [c.carrier, c.total, total>0?Math.round((c.total/total)*100):0];
-      }),
+      ...carrierTotals.map(c=>[c.carrier, c.total, totalCarrier>0?Math.round((c.total/totalCarrier)*100):0]),
       [],
       ["周辺機器売上合計(円)", peripheralMonthTotal, ""],
     ];
-    const ws2 = XLSX.utils.aoa_to_sheet(carrierSheet);
-    ws2["!cols"] = [{wch:16},{wch:10},{wch:12}];
+    const ws2 = XLSX.utils.aoa_to_sheet(carrierData);
+    ws2["!cols"] = [{wch:18},{wch:12},{wch:12}];
+    ws2["!merges"] = [{s:{r:0,c:0},e:{r:0,c:2}},{s:{r:1,c:0},e:{r:1,c:2}}];
+    [3].forEach(r=>{ carrierData[r].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r,c}); if(ws2[ref]) ws2[ref].s=subHeaderStyle; }); });
+    carrierData.slice(4,carrierData.length-2).forEach((_,ri)=>{ carrierData[4+ri].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:4+ri,c}); if(ws2[ref]) ws2[ref].s=c===0?cellStyle:numStyle; }); });
+    const ct0=XLSX.utils.encode_cell({r:0,c:0}); if(ws2[ct0]) ws2[ct0].s=titleStyle;
     XLSX.utils.book_append_sheet(wb, ws2, "キャリア別集計");
 
-    // ── 代理店・店舗別集計シート ────────────────────────────
-    const agencySheet = [
-      [`代理店・店舗別集計レポート`],
-      [`出力日：${today}　　対象期間：${periodLabel}`],
+    // ── 店舗別集計シート ────────────────────────────────────
+    const agencyData = [
+      ["店舗別集計", ""],
+      [`対象期間：${periodLabel}　　出力日：${today}`, ""],
       [],
-      ["代理店","店舗","合計件数"],
-      ...agencyTotals.map(a=>[a.agency, a.store, a.total]),
+      ["店舗","合計件数"],
+      ...agencyTotals.map(a=>[a.store||a.agency, a.total]),
       [],
-      ["合計", "", agencyTotals.reduce((s,a)=>s+a.total,0)],
+      ["合計", agencyTotals.reduce((s,a)=>s+a.total,0)],
     ];
-    const ws3 = XLSX.utils.aoa_to_sheet(agencySheet);
-    ws3["!cols"] = [{wch:20},{wch:16},{wch:10}];
-    XLSX.utils.book_append_sheet(wb, ws3, "代理店別集計");
+    const ws3 = XLSX.utils.aoa_to_sheet(agencyData);
+    ws3["!cols"] = [{wch:20},{wch:12}];
+    ws3["!merges"] = [{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:1,c:0},e:{r:1,c:1}}];
+    [3].forEach(r=>{ agencyData[r].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r,c}); if(ws3[ref]) ws3[ref].s=subHeaderStyle; }); });
+    const at0=XLSX.utils.encode_cell({r:0,c:0}); if(ws3[at0]) ws3[at0].s=titleStyle;
+    XLSX.utils.book_append_sheet(wb, ws3, "店舗別集計");
 
-    // ── 人別集計シート ──────────────────────────────────────
-    const memberSheet = [
-      [`スタッフ別集計レポート`],
-      [`出力日：${today}　　対象期間：${periodLabel}　　対象：${agencyLabel}`],
+    // ── スタッフ別集計シート ────────────────────────────────
+    const memberData = [
+      ["スタッフ別集計", "", "", ""],
+      [`対象期間：${periodLabel}　　出力日：${today}`, "", "", ""],
       [],
       ["氏名","合計件数","稼働日数","1日平均"],
-      ...memberRanking.map(r=>[
-        r.name, r.total, r.days,
-        r.days>0?Math.round((r.total/r.days)*10)/10:0
-      ]),
+      ...memberRanking.map(r=>[r.name, r.total, r.days, r.days>0?Math.round((r.total/r.days)*10)/10:0]),
       [],
       ["合計", memberRanking.reduce((s,r)=>s+r.total,0), "", ""],
     ];
-    const ws4 = XLSX.utils.aoa_to_sheet(memberSheet);
+    const ws4 = XLSX.utils.aoa_to_sheet(memberData);
     ws4["!cols"] = [{wch:14},{wch:10},{wch:10},{wch:10}];
+    ws4["!merges"] = [{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:3}}];
+    [3].forEach(r=>{ memberData[r].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r,c}); if(ws4[ref]) ws4[ref].s=subHeaderStyle; }); });
+    const mt0=XLSX.utils.encode_cell({r:0,c:0}); if(ws4[mt0]) ws4[mt0].s=titleStyle;
     XLSX.utils.book_append_sheet(wb, ws4, "スタッフ別集計");
 
     const period = periodMode==="month"
@@ -968,7 +997,7 @@ const SalesManagerDash = ({allReports}) => {
     XLSX.writeFile(wb, `販売実績レポート_${period}.xlsx`);
   };
 
-  // XLSXライブラリを動的に読み込む
+  // XLSXライブラリを動的に読み込む（スタイル対応版）
   if(!(window as any).XLSX){
     const script = document.createElement("script");
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
