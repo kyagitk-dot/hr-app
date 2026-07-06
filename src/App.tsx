@@ -202,6 +202,10 @@ const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
       return <svg {...common}><circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M14.5 13.2c2.4.4 4.3 2.5 4.5 5.3"/></svg>;
     case "settings":
       return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
+    case "training":
+      return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/><path d="M9.5 3.5A8.5 8.5 0 0 1 20.5 12"/><path d="M14.5 20.5A8.5 8.5 0 0 1 3.5 12"/></svg>;
+    case "training":
+      return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/><path d="M9.5 3.5A8.5 8.5 0 0 1 20.5 12"/><path d="M14.5 20.5A8.5 8.5 0 0 1 3.5 12"/></svg>;
     case "interview":
       return <svg {...common}><path d="M8 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="13" y2="15"/></svg>;
   }
@@ -437,13 +441,37 @@ const AIPage = ({users,evals,gradeDefs}) => {
     const u=users.find(u=>u.id===target);const e=evals[u.id]||{};const criteria=GRADE_CRITERIA[u.grade]||[];const ms=e.managerScores||{};const scoreDetail=criteria.map(c=>`・${c.item}（配点${c.points}点）: 評価${ms[c.no]||"-"}点`).join("\n");const totalMs=calcScore(ms,u.grade);
     return`以下の個人評価データを分析し、強み・課題・来期の推奨アクションを300字程度の日本語でまとめてください。\n\n【対象者】${u.name}（${u.grade}·${u.dept}）\n【上司評価 総合点】${totalMs}点 / ランク${calcRank(totalMs)}\n\n【項目別スコア】\n${scoreDetail}\n\n【強み】${e.strengths||"未記入"}\n【改善課題】${e.improvements||"未記入"}\n【昇格推薦】${e.promotion||"未入力"}`;
   };
+  const [analysisType,setAnalysisType] = useState("eval");
+  const ANALYSIS_TYPES = [
+    {id:"eval",label:"人事評価"},
+    {id:"sales",label:"販売実績"},
+    {id:"interview",label:"面談記録"},
+    {id:"training",label:"研修PDCA"},
+  ];
   const run = async () => {
     setLoading(true);setError(null);setResult(null);
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:buildPrompt()}]})});const data=await res.json();const text=data.content?.map(i=>i.text||"").join("\n");if(text)setResult(text);else setError("分析結果を取得できませんでした。");}catch{setError("通信エラーが発生しました。");}finally{setLoading(false);}
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({prompt: buildPrompt()}),
+      });
+      const data = await res.json();
+      if(data.result) setResult(data.result);
+      else setError(data.error || "分析結果を取得できませんでした。");
+    } catch {
+      setError("通信エラーが発生しました。");
+    } finally {
+      setLoading(false);
+    }
   };
   return (
     <div>
-      <Card><CardTitle>分析対象を選択</CardTitle><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><SelectEl value={target} onChange={setTarget} options={[{value:"all",label:"チーム全体"},...users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))]} style={{flex:1,minWidth:140}}/><Btn primary onClick={run} disabled={loading}>{loading?"分析中...":"✦ AI分析を実行"}</Btn></div></Card>
+      <Card>
+        <CardTitle>分析の種類</CardTitle>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>{ANALYSIS_TYPES.map(t=>(<button key={t.id} onClick={()=>setAnalysisType(t.id)} style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontFamily:"inherit",border:analysisType===t.id?`1.5px solid ${C.purple[400]}`:`0.5px solid ${C.gray[200]}`,background:analysisType===t.id?C.purple[50]:"#fff",color:analysisType===t.id?C.purple[800]:C.gray[600],fontWeight:analysisType===t.id?500:400,cursor:"pointer"}}>{t.label}</button>))}</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><SelectEl value={target} onChange={setTarget} options={[{value:"all",label:"チーム全体"},...users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))]} style={{flex:1,minWidth:140}}/><Btn primary onClick={run} disabled={loading}>{loading?"分析中...":"✦ AI分析を実行"}</Btn></div>
+      </Card>
       {loading&&<div style={{background:C.purple[50],border:`0.5px solid ${C.purple[200]}`,borderRadius:12,padding:"20px",display:"flex",gap:10,alignItems:"center"}}><span style={{fontSize:18}}>✦</span><span style={{fontSize:13,color:C.purple[800]}}>評価データを解析中...</span></div>}
       {error&&<div style={{background:C.coral[50],border:`0.5px solid ${C.coral[200]}`,borderRadius:12,padding:"16px 18px",fontSize:13,color:C.coral[800]}}>{error}</div>}
       {result&&<div style={{background:C.purple[50],border:`0.5px solid ${C.purple[200]}`,borderRadius:12,padding:"18px 20px"}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}><span style={{fontSize:14}}>✦</span><span style={{fontSize:12,fontWeight:500,color:C.purple[800]}}>AI分析サマリー — {target==="all"?"チーム全体":users.find(u=>u.id===target)?.name}</span></div><div style={{fontSize:13,color:C.purple[900],lineHeight:1.8,whiteSpace:"pre-wrap"}}>{result}</div></div>}
@@ -927,6 +955,248 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
   );
 };
 
+// ── 研修PDCAページ ─────────────────────────────────────────────
+const TrainingPDCAPage = ({users}) => {
+  const [selectedUid, setSelectedUid] = useState(users[0]?.id||"");
+  const [records, setRecords] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({
+    title:"", startDate:new Date().toLocaleDateString("sv-SE"), endDate:"",
+    plan:"", do_:"", check:"", act:"", status:"進行中"
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(()=>{
+    if(!selectedUid) return;
+    const unsub = onSnapshot(
+      collection(db,"trainingPDCA",selectedUid,"records"),
+      snap=>{
+        const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
+        recs.sort((a,b)=>b.startDate?.localeCompare(a.startDate));
+        setRecords(recs);
+      }
+    );
+    return unsub;
+  },[selectedUid]);
+
+  const openNew = ()=>{
+    setEditingId(null);
+    setForm({title:"",startDate:new Date().toLocaleDateString("sv-SE"),endDate:"",plan:"",do_:"",check:"",act:"",status:"進行中"});
+    setShowForm(true);
+  };
+
+  const openEdit = (r)=>{
+    setEditingId(r.id);
+    setForm({title:r.title||"",startDate:r.startDate||"",endDate:r.endDate||"",plan:r.plan||"",do_:r.do_||"",check:r.check||"",act:r.act||"",status:r.status||"進行中"});
+    setShowForm(true);
+  };
+
+  const save = async()=>{
+    if(!form.title.trim()||!form.plan.trim()){alert("研修名と計画（Plan）は必須です");return;}
+    setSaving(true);
+    const data = {title:form.title,startDate:form.startDate,endDate:form.endDate,plan:form.plan,do_:form.do_,check:form.check,act:form.act,status:form.status,updatedAt:new Date()};
+    if(editingId){
+      await setDoc(doc(db,"trainingPDCA",selectedUid,"records",editingId),data,{merge:true});
+    } else {
+      await setDoc(doc(collection(db,"trainingPDCA",selectedUid,"records")),{...data,createdAt:new Date()});
+    }
+    setShowForm(false);setSaving(false);
+  };
+
+  const deleteRecord = async(id)=>{
+    if(!window.confirm("この研修記録を削除しますか？"))return;
+    await deleteDoc(doc(db,"trainingPDCA",selectedUid,"records",id));
+  };
+
+  const selectedUser = users.find(u=>u.id===selectedUid);
+  const statusColor = (s)=>s==="完了"?C.teal:s==="中断"?C.coral:C.blue;
+  const STATUSES = ["進行中","完了","中断"];
+
+  const PDCASection = ({label, value, color, placeholder}) => (
+    <div style={{background:color[50],borderRadius:8,padding:"10px 12px"}}>
+      <div style={{fontSize:11,fontWeight:600,color:color[800],marginBottom:4}}>{label}</div>
+      <div style={{fontSize:13,color:C.gray[800],lineHeight:1.7,whiteSpace:"pre-wrap"}}>{value||<span style={{color:C.gray[300]}}>未入力</span>}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+        <SelectEl value={selectedUid} onChange={setSelectedUid} options={users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))} style={{flex:1,minWidth:140}}/>
+        <Btn primary onClick={openNew}>+ 研修を追加</Btn>
+      </div>
+
+      {showForm&&<Modal title={editingId?"研修PDCAを編集":"研修PDCAを追加"} onClose={()=>setShowForm(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>研修名 *</div>
+            <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="例：新人研修・OJT・製品トレーニング"
+              style={{width:"100%",height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:14,color:C.gray[800],fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>開始日</div>
+              <input type="date" value={form.startDate} onChange={e=>setForm(f=>({...f,startDate:e.target.value}))}
+                style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>終了日</div>
+              <input type="date" value={form.endDate} onChange={e=>setForm(f=>({...f,endDate:e.target.value}))}
+                style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>ステータス</div>
+              <SelectEl value={form.status} onChange={v=>setForm(f=>({...f,status:v}))} options={STATUSES.map(s=>({value:s,label:s}))}/>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.blue[600],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div>
+            <Textarea value={form.plan} onChange={v=>setForm(f=>({...f,plan:v}))} rows={3} placeholder="研修の目標・計画内容を入力"/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.teal[600],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div>
+            <Textarea value={form.do_} onChange={v=>setForm(f=>({...f,do_:v}))} rows={3} placeholder="実際に行った研修内容・実施状況"/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.amber[700],fontWeight:600,marginBottom:4}}>🔍 Check（評価）</div>
+            <Textarea value={form.check} onChange={v=>setForm(f=>({...f,check:v}))} rows={3} placeholder="研修の成果・課題・気づき"/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.purple[600],fontWeight:600,marginBottom:4}}>🔄 Act（改善）</div>
+            <Textarea value={form.act} onChange={v=>setForm(f=>({...f,act:v}))} rows={3} placeholder="次のアクション・改善点"/>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowForm(false)}>キャンセル</Btn>
+            <Btn primary onClick={save} disabled={saving}>{saving?"保存中...":"保存"}</Btn>
+          </div>
+        </div>
+      </Modal>}
+
+      {records.length===0?(
+        <div style={{textAlign:"center",padding:"3rem 1rem",color:C.gray[400],fontSize:14,background:C.gray[50],borderRadius:12}}>
+          {selectedUser?.name}さんの研修記録はまだありません。<br/>「+ 研修を追加」から追加してください。
+        </div>
+      ):(
+        <div>
+          <div style={{fontSize:12,color:C.gray[400],marginBottom:10}}>{selectedUser?.name}さんの研修PDCA（{records.length}件）</div>
+          {records.map(r=>(
+            <Card key={r.id} style={{borderLeft:`3px solid ${statusColor(r.status)[400]}`}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.gray[800],marginBottom:4}}>{r.title}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:statusColor(r.status)[50],color:statusColor(r.status)[800],fontWeight:600}}>{r.status}</span>
+                    <span style={{fontSize:11,color:C.gray[400]}}>{r.startDate}{r.endDate?` 〜 ${r.endDate}`:""}</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>openEdit(r)} style={{border:`0.5px solid ${C.gray[200]}`,background:"#fff",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",color:C.gray[600],fontFamily:"inherit"}}>編集</button>
+                  <button onClick={()=>deleteRecord(r.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.gray[400],fontSize:16}}>×</button>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <PDCASection label="📋 Plan（計画）" value={r.plan} color={C.blue} placeholder=""/>
+                <PDCASection label="✅ Do（実行）" value={r.do_} color={C.teal} placeholder=""/>
+                <PDCASection label="🔍 Check（評価）" value={r.check} color={C.amber} placeholder=""/>
+                <PDCASection label="🔄 Act（改善）" value={r.act} color={C.purple} placeholder=""/>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── 研修PDCAページ ─────────────────────────────────────────────
+const TrainingPDCAPage = ({users}) => {
+  const [selectedUid, setSelectedUid] = useState(users[0]?.id||"");
+  const [records, setRecords] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({title:"",startDate:new Date().toLocaleDateString("sv-SE"),endDate:"",plan:"",do_:"",check:"",act:"",status:"進行中"});
+  const [saving, setSaving] = useState(false);
+  const STATUSES = ["進行中","完了","中断"];
+  useEffect(()=>{
+    if(!selectedUid) return;
+    const unsub = onSnapshot(collection(db,"trainingPDCA",selectedUid,"records"),snap=>{
+      const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
+      recs.sort((a,b)=>(b.startDate||"").localeCompare(a.startDate||""));
+      setRecords(recs);
+    });
+    return unsub;
+  },[selectedUid]);
+  const openNew = ()=>{setEditingId(null);setForm({title:"",startDate:new Date().toLocaleDateString("sv-SE"),endDate:"",plan:"",do_:"",check:"",act:"",status:"進行中"});setShowForm(true);};
+  const openEdit = (r)=>{setEditingId(r.id);setForm({title:r.title||"",startDate:r.startDate||"",endDate:r.endDate||"",plan:r.plan||"",do_:r.do_||"",check:r.check||"",act:r.act||"",status:r.status||"進行中"});setShowForm(true);};
+  const save = async()=>{
+    if(!form.title.trim()||!form.plan.trim()){alert("研修名と計画（Plan）は必須です");return;}
+    setSaving(true);
+    const data={title:form.title,startDate:form.startDate,endDate:form.endDate,plan:form.plan,do_:form.do_,check:form.check,act:form.act,status:form.status,updatedAt:new Date()};
+    if(editingId){await setDoc(doc(db,"trainingPDCA",selectedUid,"records",editingId),data,{merge:true});}
+    else{await setDoc(doc(collection(db,"trainingPDCA",selectedUid,"records")),{...data,createdAt:new Date()});}
+    setShowForm(false);setSaving(false);
+  };
+  const deleteRecord = async(id)=>{if(!window.confirm("この研修記録を削除しますか？"))return;await deleteDoc(doc(db,"trainingPDCA",selectedUid,"records",id));};
+  const selectedUser = users.find(u=>u.id===selectedUid);
+  const statusColor=(s)=>s==="完了"?C.teal:s==="中断"?C.coral:C.blue;
+  return (
+    <div>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+        <SelectEl value={selectedUid} onChange={setSelectedUid} options={users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))} style={{flex:1,minWidth:140}}/>
+        <Btn primary onClick={openNew}>+ 研修を追加</Btn>
+      </div>
+      {showForm&&<Modal title={editingId?"研修PDCAを編集":"研修PDCAを追加"} onClose={()=>setShowForm(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>研修名 *</div><input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="例：新人研修・OJT" style={{width:"100%",height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:14,color:C.gray[800],fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>開始日</div><input type="date" value={form.startDate} onChange={e=>setForm(f=>({...f,startDate:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
+            <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>終了日</div><input type="date" value={form.endDate} onChange={e=>setForm(f=>({...f,endDate:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
+            <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>ステータス</div><SelectEl value={form.status} onChange={v=>setForm(f=>({...f,status:v}))} options={STATUSES.map(s=>({value:s,label:s}))}/></div>
+          </div>
+          <div><div style={{fontSize:12,color:C.blue[800],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div><Textarea value={form.plan} onChange={v=>setForm(f=>({...f,plan:v}))} rows={3} placeholder="研修の目標・計画内容"/></div>
+          <div><div style={{fontSize:12,color:C.teal[800],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div><Textarea value={form.do_} onChange={v=>setForm(f=>({...f,do_:v}))} rows={3} placeholder="実際に行った研修内容"/></div>
+          <div><div style={{fontSize:12,color:C.amber[800],fontWeight:600,marginBottom:4}}>🔍 Check（評価）</div><Textarea value={form.check} onChange={v=>setForm(f=>({...f,check:v}))} rows={3} placeholder="研修の成果・課題・気づき"/></div>
+          <div><div style={{fontSize:12,color:C.purple[600],fontWeight:600,marginBottom:4}}>🔄 Act（改善）</div><Textarea value={form.act} onChange={v=>setForm(f=>({...f,act:v}))} rows={3} placeholder="次のアクション・改善点"/></div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn onClick={()=>setShowForm(false)}>キャンセル</Btn><Btn primary onClick={save} disabled={saving}>{saving?"保存中...":"保存"}</Btn></div>
+        </div>
+      </Modal>}
+      {records.length===0?(
+        <div style={{textAlign:"center",padding:"3rem 1rem",color:C.gray[400],fontSize:14,background:C.gray[50],borderRadius:12}}>{selectedUser?.name}さんの研修記録はまだありません。<br/>「+ 研修を追加」から追加してください。</div>
+      ):(
+        <div>
+          <div style={{fontSize:12,color:C.gray[400],marginBottom:10}}>{selectedUser?.name}さんの研修PDCA（{records.length}件）</div>
+          {records.map(r=>(
+            <Card key={r.id} style={{borderLeft:`3px solid ${statusColor(r.status)[400]}`}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.gray[800],marginBottom:4}}>{r.title}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:statusColor(r.status)[50],color:statusColor(r.status)[800],fontWeight:600}}>{r.status}</span>
+                    <span style={{fontSize:11,color:C.gray[400]}}>{r.startDate}{r.endDate?` 〜 ${r.endDate}`:""}</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>openEdit(r)} style={{border:`0.5px solid ${C.gray[200]}`,background:"#fff",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",color:C.gray[600],fontFamily:"inherit"}}>編集</button>
+                  <button onClick={()=>deleteRecord(r.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.gray[400],fontSize:16}}>×</button>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[["📋 Plan（計画）",r.plan,C.blue],["✅ Do（実行）",r.do_,C.teal],["🔍 Check（評価）",r.check,C.amber],["🔄 Act（改善）",r.act,C.purple]].map(([label,val,color])=>(
+                  <div key={label} style={{background:color[50],borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:11,fontWeight:600,color:color[800],marginBottom:4}}>{label}</div>
+                    <div style={{fontSize:12,color:C.gray[800],lineHeight:1.6,whiteSpace:"pre-wrap"}}>{val||<span style={{color:C.gray[300]}}>未入力</span>}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── 面談記録ページ ─────────────────────────────────────────────
 const InterviewPage = ({users}) => {
   const [selectedUid, setSelectedUid] = useState(users[0]?.id||"");
@@ -1063,6 +1333,7 @@ const MANAGER_NAV = [
   {id:"ai",label:"AI分析",shortLabel:"AI",icon:"spark"},
   {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
   {id:"interview",label:"面談記録",shortLabel:"面談",icon:"interview"},
+  {id:"training",label:"研修PDCA",shortLabel:"研修",icon:"training"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
   {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
@@ -1144,7 +1415,7 @@ export default function App() {
   const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",users:"メンバー管理",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",training:"研修PDCA",users:"メンバー管理",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
@@ -1158,6 +1429,7 @@ export default function App() {
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports}/>}
       {page==="interview"&&<InterviewPage users={users}/>}
+      {page==="training"&&<TrainingPDCAPage users={users}/>}
       {page==="users"&&<UserManagePage users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} departments={settings.departments||DEPARTMENTS_DEFAULT}/>}
       {page==="settings"&&<SettingsPage currentUser={authUser} departments={settings.departments||DEPARTMENTS_DEFAULT} setDepartments={d=>setSettings(s=>({...s,departments:d}))} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT} setGradeDefs={g=>setSettings(s=>({...s,gradeDefs:g}))} periods={settings.periods||PERIODS_DEFAULT} setPeriods={p=>setSettings(s=>({...s,periods:p}))} onSaveSettings={onSaveSettings}/>}
     </AppShell>
