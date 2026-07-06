@@ -119,6 +119,20 @@ async function replyMessage(replyToken: string, text: string) {
   });
 }
 
+async function pushMessage(to: string, message: any) {
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      to,
+      messages: [message],
+    }),
+  });
+}
+
 function verifySignature(body: string, signature: string): boolean {
   const hash = crypto
     .createHmac("sha256", CHANNEL_SECRET)
@@ -217,6 +231,42 @@ export default async function handler(req: any, res: any) {
     const events = req.body.events || [];
 
     for (const event of events) {
+
+      // ── 友だち追加時：社員か取引先か選択ボタンを送る ────
+      if (event.type === "follow") {
+        const lineUserId = event.source.userId;
+        await pushMessage(lineUserId, {
+          type: "template",
+          altText: "ようこそ！社員・取引先を選択してください",
+          template: {
+            type: "confirm",
+            text: "ようこそ！件数報告システムです。\nあなたはどちらですか？",
+            actions: [
+              { type: "postback", label: "社員", data: "type=employee" },
+              { type: "postback", label: "取引先・業務委託", data: "type=guest" },
+            ],
+          },
+        });
+        continue;
+      }
+
+      // ── ボタンタップ（postback）───────────────────────
+      if (event.type === "postback") {
+        const lineUserId = event.source.userId;
+        const data = event.postback.data;
+        const replyToken = event.replyToken;
+        if (data === "type=employee") {
+          // 社員フラグを一時保存
+          await db.collection("lineUsersPending").doc(lineUserId).set({type:"employee", updatedAt: new Date()});
+          await replyMessage(replyToken, "社員の方はアプリに登録しているメールアドレスを送ってください。\n例：example@company.com");
+        } else if (data === "type=guest") {
+          // 取引先フラグを一時保存
+          await db.collection("lineUsersPending").doc(lineUserId).set({type:"guest", updatedAt: new Date()});
+          await replyMessage(replyToken, "取引先・業務委託の方はお名前を送ってください。\n例：田中太郎");
+        }
+        continue;
+      }
+
       if (event.type !== "message" || event.message.type !== "text") continue;
 
       const lineUserId = event.source.userId;
@@ -231,6 +281,7 @@ export default async function handler(req: any, res: any) {
       if (!linkSnap.exists) {
         const emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
         if (emailMatch) {
+          // 社員：メールアドレスで紐付け
           const email = emailMatch[0];
           const usersSnap = await db
             .collection("users")
@@ -257,10 +308,44 @@ export default async function handler(req: any, res: any) {
             );
           }
         } else {
-          await replyMessage(
-            replyToken,
-            "はじめまして！まずアプリに登録しているメールアドレスを送ってください（例：example@company.com）"
-          );
+          // 未登録：pendingタイプを確認して分岐
+          const pendingSnap = await db.collection("lineUsersPending").doc(lineUserId).get();
+          const pendingType = pendingSnap.exists ? pendingSnap.data()!.type : null;
+
+          const nameMatch = text.match(/^([^\s　！!？?。、\n]{2,10})$/);
+          if (pendingType === "guest" && nameMatch) {
+            // 取引先として登録
+            const guestName = nameMatch[1];
+            const guestUid = `guest_${lineUserId}`;
+            await db.collection("lineUsers").doc(lineUserId).set({
+              uid: guestUid,
+              displayName: guestName,
+              isGuest: true,
+              linkedAt: new Date(),
+            });
+            await db.collection("lineUsersPending").doc(lineUserId).delete();
+            await replyMessage(
+              replyToken,
+              `${guestName}さん、登録しました！\nこれから「〇〇店でdocomo新規3件」のように送ると報告できます。\n\n名前を変更したい場合は「名前変更：新しい名前」と送ってください。`
+            );
+          } else if (pendingType === "employee") {
+            // 社員として登録を促す
+            await replyMessage(replyToken, "アプリに登録しているメールアドレスを送ってください。\n例：example@company.com");
+          } else {
+            // pendingなし：選択ボタンを再送
+            await pushMessage(lineUserId, {
+              type: "template",
+              altText: "社員・取引先を選択してください",
+              template: {
+                type: "confirm",
+                text: "はじめまして！\nあなたはどちらですか？",
+                actions: [
+                  { type: "postback", label: "社員", data: "type=employee" },
+                  { type: "postback", label: "取引先・業務委託", data: "type=guest" },
+                ],
+              },
+            });
+          }
         }
         continue;
       }
@@ -268,6 +353,18 @@ export default async function handler(req: any, res: any) {
       const linkData = linkSnap.data()!;
       const uid = linkData.uid;
       const displayName = linkData.displayName;
+
+      // 名前変更対応
+      if (text === "名前変更" || text.startsWith("名前変更：") || text.startsWith("名前変更:")) {
+        const newName = text.replace(/^名前変更[：:]\s*/, "").trim();
+        if (newName && newName !== "名前変更") {
+          await db.collection("lineUsers").doc(lineUserId).set({displayName: newName},{merge:true});
+          await replyMessage(replyToken, `名前を「${newName}」に変更しました！`);
+        } else {
+          await replyMessage(replyToken, "新しいお名前を「名前変更：田中太郎」の形式で送ってください。");
+        }
+        continue;
+      }
 
       // ── リッチメニュー：フォーマットを見る ─────────────
       if (text.includes("フォーマット")) {
