@@ -545,7 +545,7 @@ export default async function handler(req: any, res: any) {
           .collection("daily")
           .doc(date)
           .get();
-        if (repSnap.exists()) {
+        if (repSnap.exists) {
           const data = repSnap.data()!;
           const entries: any[] = data.entries || [];
           const total = entries.reduce((s: number, e: any) => s + totalOfEntry(e), 0);
