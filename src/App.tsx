@@ -1404,6 +1404,8 @@ const TrainingPDCAPage = ({users}) => {
     plan:"", do_:"", check:"", act:"", status:"進行中"
   });
   const [saving, setSaving] = useState(false);
+  const [sendingFeedback, setSendingFeedback] = useState(null);
+  const [feedbackResult, setFeedbackResult] = useState(null);
 
   useEffect(()=>{
     if(!selectedUid) return;
@@ -1445,6 +1447,89 @@ const TrainingPDCAPage = ({users}) => {
   const deleteRecord = async(id)=>{
     if(!window.confirm("この研修記録を削除しますか？"))return;
     await deleteDoc(doc(db,"trainingPDCA",selectedUid,"records",id));
+  };
+
+  const sendAIFeedback = async(r)=>{
+    setSendingFeedback(r.id);
+    setFeedbackResult(null);
+    try {
+      const selectedUser = users.find(u=>u.id===selectedUid);
+      const prompt = `以下の研修PDCAを分析し、バディ上司へのフィードバックメッセージを作成してください。
+メンバー名：${selectedUser?.name||""}
+研修名：${r.title}
+期間：${r.startDate}${r.endDate?` 〜 ${r.endDate}`:""}
+ステータス：${r.status}
+
+【Plan（計画）】
+${r.plan||"未入力"}
+
+【Do（実行）】
+${r.do_||"未入力"}
+
+【Check（評価）】
+${r.check||"未入力"}
+
+【Act（改善）】
+${r.act||"未入力"}
+
+以下の形式でLINEメッセージを作成してください（200字以内）：
+・良かった点を1〜2点
+・改善が必要な点を1〜2点
+・次のアクション提案を1点
+親しみやすく具体的なアドバイスを日本語でお願いします。`;
+
+      // AIで分析
+      const aiRes = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({prompt}),
+      });
+      const aiData = await aiRes.json();
+      if(!aiData.result) throw new Error("AI分析失敗");
+
+      const feedback = `【研修PDCAフィードバック】\n${selectedUser?.name||""}さん / ${r.title}\n\n${aiData.result}`;
+
+      // バディ上司のLINE IDを取得
+      const buddyUid = selectedUser?.buddyUid;
+      if(!buddyUid){
+        setFeedbackResult({error:`${selectedUser?.name}さんにはバディ上司が設定されていません。メンバー管理でバディを設定してください。`});
+        return;
+      }
+
+      // lineUsersからバディ上司のLINE IDを取得
+      const lineSnap = await getDoc(doc(db,"users",buddyUid));
+      const buddyData = lineSnap.data();
+
+      // lineUsersコレクションからバディのLINE UserIDを検索
+      const lineUsersSnap = await import("firebase/firestore").then(({getDocs,query,where})=>
+        getDocs(query(collection(db,"lineUsers"),where("uid","==",buddyUid)))
+      );
+
+      if(lineUsersSnap.empty){
+        setFeedbackResult({error:`バディ上司（${buddyData?.name}）がLINEと連携していません。`});
+        return;
+      }
+
+      const buddyLineUserId = lineUsersSnap.docs[0].id;
+
+      // LINE送信
+      const lineRes = await fetch("/api/send-line", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({lineUserIds:[buddyLineUserId], message:feedback}),
+      });
+      const lineData = await lineRes.json();
+
+      if(lineData.successCount > 0){
+        setFeedbackResult({success:`${buddyData?.name}さんのLINEにフィードバックを送信しました！`});
+      } else {
+        setFeedbackResult({error:"LINE送信に失敗しました。"});
+      }
+    } catch(e) {
+      setFeedbackResult({error:"エラーが発生しました。"});
+    } finally {
+      setSendingFeedback(null);
+    }
   };
 
   const selectedUser = users.find(u=>u.id===selectedUid);
@@ -1538,6 +1623,16 @@ const TrainingPDCAPage = ({users}) => {
                 <PDCASection label="✅ Do（実行）" value={r.do_} color={C.teal} placeholder=""/>
                 <PDCASection label="🔍 Check（評価）" value={r.check} color={C.amber} placeholder=""/>
                 <PDCASection label="🔄 Act（改善）" value={r.act} color={C.purple} placeholder=""/>
+              </div>
+              <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <Btn small primary onClick={()=>sendAIFeedback(r)} disabled={sendingFeedback===r.id}>
+                  {sendingFeedback===r.id?"AI分析中...":"✦ AIフィードバックをLINEで送る"}
+                </Btn>
+                {feedbackResult&&sendingFeedback===null&&(
+                  <span style={{fontSize:12,color:feedbackResult.error?C.coral[800]:C.teal[800]}}>
+                    {feedbackResult.error||feedbackResult.success}
+                  </span>
+                )}
               </div>
             </Card>
           ))}
