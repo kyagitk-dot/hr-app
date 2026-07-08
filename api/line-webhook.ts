@@ -143,6 +143,46 @@ function verifySignature(body: string, signature: string): boolean {
 
 const todayStr = () => new Date().toLocaleDateString("sv-SE");
 
+// テキストから日付を抽出する関数
+// 「7月6日」「7/6」「6日」などに対応
+function extractDateFromText(text: string): { date: string; cleanText: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  // 「7月6日」「7月06日」
+  const jpFull = text.match(/(\d{1,2})月(\d{1,2})日/);
+  if (jpFull) {
+    const month = String(parseInt(jpFull[1])).padStart(2, "0");
+    const day = String(parseInt(jpFull[2])).padStart(2, "0");
+    const date = `${year}-${month}-${day}`;
+    const cleanText = text.replace(jpFull[0], "").trim();
+    return { date, cleanText };
+  }
+
+  // 「7/6」「07/06」
+  const slashFull = text.match(/(\d{1,2})\/(\d{1,2})/);
+  if (slashFull) {
+    const month = String(parseInt(slashFull[1])).padStart(2, "0");
+    const day = String(parseInt(slashFull[2])).padStart(2, "0");
+    const date = `${year}-${month}-${day}`;
+    const cleanText = text.replace(slashFull[0], "").trim();
+    return { date, cleanText };
+  }
+
+  // 「6日」（月は現在月）
+  const jpDay = text.match(/^(\d{1,2})日[\s　]/);
+  if (jpDay) {
+    const month = String(currentMonth).padStart(2, "0");
+    const day = String(parseInt(jpDay[1])).padStart(2, "0");
+    const date = `${year}-${month}-${day}`;
+    const cleanText = text.replace(jpDay[0], "").trim();
+    return { date, cleanText };
+  }
+
+  return { date: todayStr(), cleanText: text };
+}
+
 function parseReportText(text: string) {
   const lower = text.toLowerCase();
 
@@ -538,27 +578,90 @@ export default async function handler(req: any, res: any) {
 
       // ── リッチメニュー：追加報告 ─────────────────────────
       if (text === "追加報告") {
-        const date = todayStr();
-        const repSnap = await db
-          .collection("salesReports")
-          .doc(uid)
-          .collection("daily")
-          .doc(date)
-          .get();
-        if (repSnap.exists) {
-          const data = repSnap.data()!;
-          const entries: any[] = data.entries || [];
-          const total = entries.reduce((s: number, e: any) => s + totalOfEntry(e), 0);
-          await replyMessage(
-            replyToken,
-            `【本日の報告状況】\n現在の合計：${total}件\n\n追加分をそのまま送ってください。同じキャリアは上書き、新しいキャリアは追加されます。\n\n例：〇〇店でdocomo MNP1件\n例：au クレカ2件`
-          );
+        // pending状態をセット（日付待ち）
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_date",
+          updatedAt: new Date(),
+        });
+        await replyMessage(
+          replyToken,
+          "何日の報告ですか？\n\n例：7月6日\n例：今日\n例：7/6"
+        );
+        continue;
+      }
+
+      // ── pending：日付待ち状態の処理 ──────────────────────
+      const pendingSnap2 = await db.collection("lineUsersPending").doc(lineUserId).get();
+      const pendingType2 = pendingSnap2.exists ? pendingSnap2.data()!.type : null;
+
+      if (pendingType2 === "awaiting_date") {
+        let targetDate = todayStr();
+        if (text === "今日" || text === "本日") {
+          targetDate = todayStr();
         } else {
-          await replyMessage(
-            replyToken,
-            "本日はまだ報告がありません。\n\n以下の形式で送ってください。\n\n例：〇〇店でdocomo新規3件 MNP1件\n例：〇〇店でワイモバイル 機変2件 クレカ1件"
-          );
+          const { date: extracted } = extractDateFromText(text + " dummy");
+          if (extracted !== todayStr() || text.match(/\d+月\d+日|\d+\/\d+/)) {
+            targetDate = extracted;
+          }
         }
+        // 日付を保存して件数待ち状態へ
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_report",
+          targetDate,
+          updatedAt: new Date(),
+        });
+        const repSnap = await db.collection("salesReports").doc(uid).collection("daily").doc(targetDate).get();
+        const existingTotal = repSnap.exists
+          ? (repSnap.data()!.entries || []).reduce((s: number, e: any) => s + totalOfEntry(e), 0)
+          : 0;
+        const dateLabel = targetDate === todayStr() ? "今日" : targetDate;
+        await replyMessage(
+          replyToken,
+          `${dateLabel}の報告ですね！${existingTotal > 0 ? `\n現在の合計：${existingTotal}件\n` : ""}\n報告内容を送ってください。\n\n例：〇〇店でdocomo新規3件 MNP1件\n例：au クレカ2件`
+        );
+        continue;
+      }
+
+      if (pendingType2 === "awaiting_report") {
+        const targetDate = pendingSnap2.data()!.targetDate || todayStr();
+        // pendingを削除して通常の報告処理へ（dateをoverrideする）
+        await db.collection("lineUsersPending").doc(lineUserId).delete();
+        // textをそのまま通常フローで処理するためにdateを上書き
+        // ↓以下の通常報告フローで使うdateをtargetDateに設定
+        const overrideDate = targetDate;
+
+        const { cleanText: cleanTextForReport } = extractDateFromText(text);
+        const parsedReport = parseReportText(cleanTextForReport) || parseReportText(text);
+        if (!parsedReport || !parsedReport.carrierId) {
+          await replyMessage(replyToken, "報告内容を読み取れませんでした。\n\n例：docomo新規3件 MNP1件\n例：au クレカ2件");
+          continue;
+        }
+
+        const ref = db.collection("salesReports").doc(uid).collection("daily").doc(overrideDate);
+        const snap = await ref.get();
+        const existing = snap.exists ? snap.data()! : { entries: [], peripheralTotal: 0 };
+        const entries: any[] = existing.entries || [];
+        const safeCarrierId = parsedReport.carrierId || "other";
+        const idx = entries.findIndex((e: any) => e.carrierId === safeCarrierId);
+        const emptyEntry = (carrierId: string) => ({carrierId,newContract:0,deviceChange:0,mnpIn:0,portIn:0,netLine:0,creditCard:0,energy:0});
+        if (idx >= 0) entries[idx] = {...entries[idx], ...parsedReport.entry};
+        else entries.push({...emptyEntry(safeCarrierId), ...parsedReport.entry});
+
+        await ref.set({
+          uid, displayName,
+          agency: parsedReport.agency || existing.agency || "",
+          storeName: parsedReport.storeName || existing.storeName || "",
+          date: overrideDate, entries,
+          peripheralTotal: (existing.peripheralTotal || 0) + (parsedReport.peripheralAmount || 0),
+          updatedAt: new Date(),
+          createdAt: snap.exists ? existing.createdAt : new Date(),
+        }, { merge: true });
+
+        const parts = Object.entries(parsedReport.entry)
+          .filter(([, v]) => (v as number) > 0)
+          .map(([k, v]) => `${FIELD_LABELS[k] || k}：${v}件`);
+        const dateLabel = overrideDate === todayStr() ? "今日" : overrideDate;
+        await replyMessage(replyToken, `【${dateLabel}の報告】記録しました！\n${CARRIER_LABELS[safeCarrierId] || safeCarrierId}\n${parts.join("\n")}\nアプリでも確認できます。`);
         continue;
       }
 
@@ -585,7 +688,8 @@ export default async function handler(req: any, res: any) {
       }
 
       // ── 件数報告として解析 ──────────────────────────────
-      const parsed = parseReportText(text);
+      const { date, cleanText } = extractDateFromText(text);
+      const parsed = parseReportText(cleanText) || parseReportText(text);
       if (!parsed) {
         await replyMessage(
           replyToken,
@@ -624,7 +728,6 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      const date = todayStr();
       const ref = db
         .collection("salesReports")
         .doc(uid)
@@ -719,7 +822,7 @@ export default async function handler(req: any, res: any) {
 
       await replyMessage(
         replyToken,
-        `記録しました！\n${parts.join("\n")}\nアプリでも確認できます。`
+        `${date !== todayStr() ? `【${date}の報告】\n` : ""}記録しました！\n${parts.join("\n")}\nアプリでも確認できます。`
       );
     }
 
