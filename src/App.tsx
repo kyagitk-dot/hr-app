@@ -697,8 +697,29 @@ const SalesInputForm = ({uid, displayName}) => {
     await setDoc(ref,{uid,displayName,date,agency,storeName,entries,peripheralTotal:peripheralAmount,createdAt:snap.exists()?snap.data().createdAt:new Date(),updatedAt:new Date()});
     setSavedAt(new Date());setSaving(false);
   };
+  const [requestReason, setRequestReason] = useState("");
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   const current=entries.find(e=>e.carrierId===carrierId)||emptyEntry(carrierId);
   const isToday=date===todayStr();
+
+  const submitEditRequest = async()=>{
+    if(!requestReason.trim()){alert("修正理由を入力してください");return;}
+    setRequesting(true);
+    await setDoc(doc(collection(db,"salesEditRequests")),{
+      uid, displayName, date, entries,
+      peripheralTotal: peripheralAmount,
+      agency, storeName,
+      reason: requestReason,
+      status: "pending",
+      createdAt: new Date(),
+    });
+    setRequestSent(true);
+    setShowRequestForm(false);
+    setRequesting(false);
+    setRequestReason("");
+  };
 
   if(loading)return <div style={{padding:"2rem",textAlign:"center",color:C.gray[400],fontSize:13}}>読み込み中...</div>;
   return (
@@ -708,11 +729,27 @@ const SalesInputForm = ({uid, displayName}) => {
           <div style={{fontSize:15,fontWeight:500,color:C.gray[800]}}>日次販売報告</div>
           {savedAt&&<div style={{fontSize:11,color:C.gray[400],marginTop:2}}>保存済 {savedAt.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}</div>}
         </div>
-        <button onClick={save} disabled={saving||!isToday} style={{padding:"8px 20px",background:isToday?C.purple[400]:C.gray[200],color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:500,cursor:isToday?"pointer":"default",fontFamily:"inherit"}}>
-          {saving?"保存中...":"保存"}
-        </button>
+        {isToday
+          ? <button onClick={save} disabled={saving} style={{padding:"8px 20px",background:C.purple[400],color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"inherit"}}>{saving?"保存中...":"保存"}</button>
+          : <Btn primary onClick={()=>setShowRequestForm(true)}>修正申請</Btn>
+        }
       </div>
-      {!isToday&&<div style={{padding:"8px 12px",background:C.amber[50],borderRadius:8,fontSize:12,color:C.amber[800],marginBottom:12}}>過去日の報告は閲覧のみです</div>}
+      {!isToday&&requestSent&&<div style={{padding:"8px 12px",background:C.green[50],borderRadius:8,fontSize:12,color:C.green[800],marginBottom:12}}>✓ 修正申請を送信しました。管理者の承認をお待ちください。</div>}
+      {!isToday&&!requestSent&&<div style={{padding:"8px 12px",background:C.amber[50],borderRadius:8,fontSize:12,color:C.amber[800],marginBottom:12}}>過去日の修正は管理者の承認が必要です。内容を入力して「修正申請」を押してください。</div>}
+      {showRequestForm&&<Modal title="修正申請" onClose={()=>setShowRequestForm(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:13,color:C.gray[600]}}>{date}の販売実績を修正申請します。</div>
+          <div>
+            <div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>修正理由 *</div>
+            <Textarea value={requestReason} onChange={setRequestReason} rows={3} placeholder="例：入力ミスがあったため、正しい件数に修正したい"/>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowRequestForm(false)}>キャンセル</Btn>
+            <Btn primary onClick={submitEditRequest} disabled={requesting}>{requesting?"送信中...":"申請する"}</Btn>
+          </div>
+        </div>
+      </Modal>}
+
       <Card>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           <div>
@@ -721,11 +758,11 @@ const SalesInputForm = ({uid, displayName}) => {
           </div>
           <div>
             <div style={{fontSize:11,color:C.gray[400],marginBottom:4}}>代理店名</div>
-            <input value={agency} onChange={e=>setAgency(e.target.value)} placeholder="例：〇〇エージェント" disabled={!isToday} style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:isToday?"#fff":C.gray[50],fontFamily:"inherit",boxSizing:"border-box"}}/>
+            <input value={agency} onChange={e=>setAgency(e.target.value)} placeholder="例：〇〇エージェント" style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:"#fff",fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
           <div>
             <div style={{fontSize:11,color:C.gray[400],marginBottom:4}}>店舗名</div>
-            <input value={storeName} onChange={e=>setStoreName(e.target.value)} placeholder="例：△△店" disabled={!isToday} style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:isToday?"#fff":C.gray[50],fontFamily:"inherit",boxSizing:"border-box"}}/>
+            <input value={storeName} onChange={e=>setStoreName(e.target.value)} placeholder="例：△△店" style={{width:"100%",height:34,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:13,color:C.gray[800],background:"#fff",fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
         </div>
       </Card>
@@ -743,19 +780,18 @@ const SalesInputForm = ({uid, displayName}) => {
       <Card>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>モバイル</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {SALES_FIELDS.slice(0,4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+          {SALES_FIELDS.slice(0,4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
         </div>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>付帯商材</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {SALES_FIELDS.slice(4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} disabled={!isToday} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
+          {SALES_FIELDS.slice(4).map(f=><div key={f.key}><div style={{fontSize:11,color:C.gray[400],marginBottom:3}}>{f.label}</div><NumInput value={current[f.key]||0} onChange={v=>updateEntry(carrierId,f.key,v)}/></div>)}
         </div>
       </Card>
       <Card>
         <div style={{fontSize:12,fontWeight:500,color:C.gray[400],marginBottom:10}}>周辺機器（金額・本日合計）</div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <input type="number" min={0} value={peripheralAmount===0?"":peripheralAmount} placeholder="0" disabled={!isToday}
-            onChange={e=>setPeripheralAmount(Math.max(0,parseInt(e.target.value||"0",10)))}
-            style={{flex:1,height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:14,textAlign:"right",background:isToday?"#fff":C.gray[50],color:C.gray[800],outline:"none",fontFamily:"inherit"}}/>
+          <input type="number" min={0} value={peripheralAmount===0?"":peripheralAmount} placeholder="0" onChange={e=>setPeripheralAmount(Math.max(0,parseInt(e.target.value||"0",10)))}
+            style={{flex:1,height:36,padding:"0 10px",border:`0.5px solid ${C.gray[200]}`,borderRadius:6,fontSize:14,textAlign:"right",background:"#fff",color:C.gray[800],outline:"none",fontFamily:"inherit"}}/>
           <span style={{fontSize:13,color:C.gray[400]}}>円</span>
         </div>
         <div style={{fontSize:11,color:C.gray[400],marginTop:6}}>キャリアを問わず、本日の周辺機器売上の合計金額を入力してください</div>
@@ -1139,20 +1175,118 @@ const SalesManagerDash = ({allReports}) => {
   );
 };
 
+const SalesApprovalPage = () => {
+  const [requests, setRequests] = useState([]);
+  const [processing, setProcessing] = useState(null);
+
+  useEffect(()=>{
+    const unsub = onSnapshot(
+      collection(db,"salesEditRequests"),
+      snap=>{
+        const reqs = snap.docs.map(d=>({id:d.id,...d.data()}));
+        reqs.sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0));
+        setRequests(reqs);
+      }
+    );
+    return unsub;
+  },[]);
+
+  const approve = async(req)=>{
+    if(!window.confirm(`${req.displayName}さんの${req.date}の修正を承認しますか？`))return;
+    setProcessing(req.id);
+    // 実際のデータを上書き
+    await setDoc(doc(db,"salesReports",req.uid,"daily",req.date),{
+      uid:req.uid, displayName:req.displayName, date:req.date,
+      entries:req.entries, peripheralTotal:req.peripheralTotal||0,
+      agency:req.agency||"", storeName:req.storeName||"",
+      updatedAt:new Date(), approvedAt:new Date(),
+    },{merge:true});
+    await setDoc(doc(db,"salesEditRequests",req.id),{status:"approved",processedAt:new Date()},{merge:true});
+    setProcessing(null);
+  };
+
+  const reject = async(req)=>{
+    if(!window.confirm(`${req.displayName}さんの${req.date}の修正申請を却下しますか？`))return;
+    setProcessing(req.id);
+    await setDoc(doc(db,"salesEditRequests",req.id),{status:"rejected",processedAt:new Date()},{merge:true});
+    setProcessing(null);
+  };
+
+  const pending = requests.filter(r=>r.status==="pending");
+  const processed = requests.filter(r=>r.status!=="pending");
+
+  return (
+    <div>
+      {pending.length===0?(
+        <div style={{textAlign:"center",padding:"3rem 1rem",color:C.gray[400],fontSize:14,background:C.gray[50],borderRadius:12}}>承認待ちの申請はありません</div>
+      ):(
+        <div>
+          <div style={{fontSize:12,color:C.gray[400],marginBottom:10}}>承認待ち（{pending.length}件）</div>
+          {pending.map(r=>(
+            <Card key={r.id} style={{borderLeft:`3px solid ${C.amber[400]}`}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:C.gray[800]}}>{r.displayName}</div>
+                  <div style={{fontSize:11,color:C.gray[400]}}>{r.date} の修正申請</div>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <Btn small primary onClick={()=>approve(r)} disabled={processing===r.id}>承認</Btn>
+                  <Btn small danger onClick={()=>reject(r)} disabled={processing===r.id}>却下</Btn>
+                </div>
+              </div>
+              <div style={{background:C.amber[50],borderRadius:8,padding:"8px 12px",marginBottom:8}}>
+                <div style={{fontSize:11,color:C.amber[800],fontWeight:500,marginBottom:2}}>修正理由</div>
+                <div style={{fontSize:12,color:C.gray[800]}}>{r.reason}</div>
+              </div>
+              <div style={{fontSize:11,color:C.gray[400]}}>
+                修正後の件数：{(r.entries||[]).map(e=>`${CARRIERS_SALES.find(c=>c.id===e.carrierId)?.label||e.carrierId} ${salesTotal(e)}件`).filter((_,i)=>(r.entries[i]&&salesTotal(r.entries[i])>0)).join("、")||"なし"}
+              </div>
+              <div style={{fontSize:10,color:C.gray[300],marginTop:4}}>{r.createdAt?.toDate?.()?.toLocaleString("ja-JP")||""}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+      {processed.length>0&&(
+        <div style={{marginTop:16}}>
+          <div style={{fontSize:12,color:C.gray[400],marginBottom:8}}>処理済み（{processed.length}件）</div>
+          {processed.slice(0,5).map(r=>(
+            <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:C.gray[50],borderRadius:8,marginBottom:6}}>
+              <span style={{fontSize:11,padding:"2px 8px",borderRadius:12,background:r.status==="approved"?C.green[50]:C.coral[50],color:r.status==="approved"?C.green[800]:C.coral[800],fontWeight:500}}>{r.status==="approved"?"承認":"却下"}</span>
+              <span style={{fontSize:12,color:C.gray[800]}}>{r.displayName}</span>
+              <span style={{fontSize:11,color:C.gray[400]}}>{r.date}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SalesPage = ({currentUser, userProfile, isManager, allReports}) => {
   const [tab,setTab] = useState("input");
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(()=>{
+    if(!isManager) return;
+    const unsub = onSnapshot(collection(db,"salesEditRequests"),snap=>{
+      setPendingCount(snap.docs.filter(d=>d.data().status==="pending").length);
+    });
+    return unsub;
+  },[isManager]);
+
   const tabs = isManager
-    ?[{id:"input",label:"日次入力"},{id:"mystats",label:"自分の実績"},{id:"dashboard",label:"管理ダッシュボード"}]
+    ?[{id:"input",label:"日次入力"},{id:"mystats",label:"自分の実績"},{id:"dashboard",label:"管理ダッシュボード"},{id:"approval",label:"承認"+(pendingCount>0?` (${pendingCount})`:"")}]
     :[{id:"input",label:"日次入力"},{id:"mystats",label:"自分の実績"}];
   const tabStyle = t=>({padding:"7px 16px",fontSize:13,borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t?C.purple[400]:"transparent",color:tab===t?"#fff":C.gray[600],fontWeight:tab===t?500:400});
   return (
     <div>
-      <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:10,padding:4,marginBottom:16}}>
+      <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:10,padding:4,marginBottom:16,flexWrap:"wrap"}}>
         {tabs.map(t=><button key={t.id} style={tabStyle(t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}
       </div>
       {tab==="input"&&<SalesInputForm uid={currentUser.uid} displayName={userProfile?.name||currentUser.email}/>}
       {tab==="mystats"&&<SalesMemberStats uid={currentUser.uid} allReports={allReports}/>}
       {tab==="dashboard"&&isManager&&<SalesManagerDash allReports={allReports}/>}
+      {tab==="approval"&&isManager&&<SalesApprovalPage/>}
     </div>
   );
 };
