@@ -137,7 +137,8 @@ const SALES_FIELDS = [
   {key:"mnpIn",label:"MNP転入"},
   {key:"portIn",label:"番号移行"},
   {key:"netLine",label:"ネット回線"},
-  {key:"creditCard",label:"クレカ"},
+  {key:"creditCardNormal",label:"クレカ(N)"},
+  {key:"creditCardGold",label:"クレカ(G)"},
   {key:"energy",label:"電気・ガス"},
 ];
 const toDateStr = (d) => d.toLocaleDateString("sv-SE");
@@ -960,12 +961,12 @@ const SalesManagerDash = ({allReports}) => {
       [`販売実績レポート`, "", "", "", "", "", "", "", "", "", "", "", ""],
       [`対象期間：${periodLabel}　　対象：${personLabel}　　出力日：${today}`, "", "", "", "", "", "", "", "", "", "", "", ""],
       [],
-      ["日付","氏名","店舗","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレカ","電気・ガス","合計件数","周辺機器(円)"],
+      ["日付","氏名","店舗","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレカ(N)","クレカ(G)","電気・ガス","合計件数","周辺機器(円)"],
       ...dailyRows.map(r=>[
         r.date, r.name, r.store||"",
         CARRIERS_SALES.find(c=>c.id===r.carrier)?.label||r.carrier,
         r.newContract||0, r.deviceChange||0, r.mnpIn||0, r.portIn||0,
-        r.netLine||0, r.creditCard||0, r.energy||0,
+        r.netLine||0, r.creditCardNormal||0, r.creditCardGold||0, r.energy||0,
         salesTotal(r), r.peripheralTotal||0
       ]),
       [],
@@ -975,7 +976,8 @@ const SalesManagerDash = ({allReports}) => {
         dailyRows.reduce((s,r)=>s+(r.mnpIn||0),0),
         dailyRows.reduce((s,r)=>s+(r.portIn||0),0),
         dailyRows.reduce((s,r)=>s+(r.netLine||0),0),
-        dailyRows.reduce((s,r)=>s+(r.creditCard||0),0),
+        dailyRows.reduce((s,r)=>s+(r.creditCardNormal||0),0),
+        dailyRows.reduce((s,r)=>s+(r.creditCardGold||0),0),
         dailyRows.reduce((s,r)=>s+(r.energy||0),0),
         dailyRows.reduce((s,r)=>s+salesTotal(r),0),
         dailyRows.reduce((s,r)=>s+(r.peripheralTotal||0),0),
@@ -1112,7 +1114,7 @@ const SalesManagerDash = ({allReports}) => {
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.agency||"-"}</td>
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.store||"-"}</td>
                     <td style={{padding:"6px 8px"}}><span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:CARRIER_COLORS_S[r.carrier]+"20",color:CARRIER_COLORS_S[r.carrier],fontWeight:500}}>{CARRIERS_SALES.find(c=>c.id===r.carrier)?.label}</span></td>
-                    {["newContract","deviceChange","mnpIn","portIn","netLine","creditCard","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
+                    {["newContract","deviceChange","mnpIn","portIn","netLine","creditCardNormal","creditCardGold","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
                     <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.purple[800]}}>{salesTotal(r)}</td>
                     <td style={{padding:"6px 8px",textAlign:"right",color:r.peripheralTotal>0?C.gray[800]:C.gray[200]}}>{r.peripheralTotal?r.peripheralTotal.toLocaleString()+"円":"-"}</td>
                     <td style={{padding:"6px 8px"}}>
@@ -1885,7 +1887,7 @@ const LineSendPage = () => {
 
   const TEMPLATES = [
     {label:"挨拶・使い方説明", text:"お疲れ様です！\nこのLINEボットで日次の件数報告ができます。\n\n📱報告フォーマット：\n「〇〇店でdocomo新規3件 MNP1件」\nのように送ってください。\n\nご不明な点があればお知らせください。"},
-    {label:"フォーマット案内", text:"【件数報告フォーマット】\n\n店舗名＋キャリア＋項目＋件数\n\n例①：〇〇店でdocomo新規3件 MNP1件\n例②：〇〇店でワイモバイル 機変2件 クレカ1件\n\nキャリア：docomo/ahamo/au/SoftBank/ワイモバイル/UQ\n項目：新規/機変/MNP転入/番号移行/ネット/クレカ/電気・ガス"},
+    {label:"フォーマット案内", text:"【件数報告フォーマット】\n\n店舗名＋キャリア＋項目＋件数\n\n例①：〇〇店でdocomo新規3件 MNP1件\n例②：〇〇店でワイモバイル 機変2件 クレカ1件\n\nキャリア：docomo/ahamo/au/SoftBank/ワイモバイル/UQ\n項目：新規/機変/MNP転入/番号移行/ネット/クレカ(N)/クレカ(G)/電気・ガス"},
     {label:"目標入力リマインド", text:"お疲れ様です！\n本日の目標をまだ入力していない方は入力をお願いします。\n\n例：目標 新規10件 MNP5件"},
     {label:"月末集計のお知らせ", text:"今月も残りわずかです！\n報告漏れがないか確認をお願いします。\n\n「今日の実績を見る」ボタンで本日の報告内容を確認できます。"},
   ];
