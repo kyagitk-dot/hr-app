@@ -536,6 +536,32 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
+      // ── リッチメニュー：追加報告 ─────────────────────────
+      if (text === "追加報告") {
+        const date = todayStr();
+        const repSnap = await db
+          .collection("salesReports")
+          .doc(uid)
+          .collection("daily")
+          .doc(date)
+          .get();
+        if (repSnap.exists()) {
+          const data = repSnap.data()!;
+          const entries: any[] = data.entries || [];
+          const total = entries.reduce((s: number, e: any) => s + totalOfEntry(e), 0);
+          await replyMessage(
+            replyToken,
+            `【本日の報告状況】\n現在の合計：${total}件\n\n追加分をそのまま送ってください。同じキャリアは上書き、新しいキャリアは追加されます。\n\n例：〇〇店でdocomo MNP1件\n例：au クレカ2件`
+          );
+        } else {
+          await replyMessage(
+            replyToken,
+            "本日はまだ報告がありません。\n\n以下の形式で送ってください。\n\n例：〇〇店でdocomo新規3件 MNP1件\n例：〇〇店でワイモバイル 機変2件 クレカ1件"
+          );
+        }
+        continue;
+      }
+
       // ── 旧コマンド互換（実績／今日）─────────────────────
       if (text.includes("実績") || text.includes("今日")) {
         const date = todayStr();
