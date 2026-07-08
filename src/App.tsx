@@ -1454,77 +1454,47 @@ const TrainingPDCAPage = ({users}) => {
     setFeedbackResult(null);
     try {
       const selectedUser = users.find(u=>u.id===selectedUid);
-      const prompt = `以下の研修PDCAを分析し、バディ上司へのフィードバックメッセージを作成してください。
-メンバー名：${selectedUser?.name||""}
-研修名：${r.title}
-期間：${r.startDate}${r.endDate?` 〜 ${r.endDate}`:""}
-ステータス：${r.status}
 
-【Plan（計画）】
-${r.plan||"未入力"}
+      const buddyPrompt = `以下の研修PDCAを分析し、バディ上司への指導用フィードバックを200字以内で作成してください。
+メンバー名：${selectedUser?.name||""}　研修名：${r.title}　ステータス：${r.status}
+Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未入力"} / Act:${r.act||"未入力"}
+・メンバーの良かった点（1〜2点）・改善が必要な点と指導ポイント（1〜2点）・次回確認すべき点（1点）
+客観的でプロフェッショナルなトーンで。`;
 
-【Do（実行）】
-${r.do_||"未入力"}
+      const memberPrompt = `以下の研修PDCAを分析し、メンバー本人への励ましフィードバックを200字以内で作成してください。
+研修名：${r.title}　ステータス：${r.status}
+Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未入力"} / Act:${r.act||"未入力"}
+・頑張れた点を褒める（1〜2点）・自分でできる改善アドバイス（1〜2点）・次のステップへの応援（1点）
+親しみやすく前向きなトーンで。`;
 
-【Check（評価）】
-${r.check||"未入力"}
+      const [buddyAiRes, memberAiRes] = await Promise.all([
+        fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:buddyPrompt})}),
+        fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:memberPrompt})}),
+      ]);
+      const [buddyAI, memberAI] = await Promise.all([buddyAiRes.json(), memberAiRes.json()]);
+      if(!buddyAI.result||!memberAI.result) throw new Error("AI分析失敗");
 
-【Act（改善）】
-${r.act||"未入力"}
+      const buddyMessage = `【研修PDCAフィードバック（指導用）】\n${selectedUser?.name||""}さん / ${r.title}\n\n${buddyAI.result}`;
+      const memberMessage = `【研修PDCAフィードバック】\n${r.title}\n\n${memberAI.result}`;
 
-以下の形式でLINEメッセージを作成してください（200字以内）：
-・良かった点を1〜2点
-・改善が必要な点を1〜2点
-・次のアクション提案を1点
-親しみやすく具体的なアドバイスを日本語でお願いします。`;
-
-      // AIで分析
-      const aiRes = await fetch("/api/analyze", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({prompt}),
-      });
-      const aiData = await aiRes.json();
-      if(!aiData.result) throw new Error("AI分析失敗");
-
-      const feedback = `【研修PDCAフィードバック】\n${selectedUser?.name||""}さん / ${r.title}\n\n${aiData.result}`;
-
-      // バディ上司のLINE IDを取得
       const buddyUid = selectedUser?.buddyUid;
-      if(!buddyUid){
-        setFeedbackResult({error:`${selectedUser?.name}さんにはバディ上司が設定されていません。メンバー管理でバディを設定してください。`});
-        return;
+      if(!buddyUid){setFeedbackResult({error:`${selectedUser?.name}さんにはバディ上司が設定されていません。`});return;}
+
+      const buddyDocData = (await getDoc(doc(db,"users",buddyUid))).data();
+      const [buddyLineSnap, memberLineSnap] = await Promise.all([
+        import("firebase/firestore").then(({getDocs,query,where})=>getDocs(query(collection(db,"lineUsers"),where("uid","==",buddyUid)))),
+        import("firebase/firestore").then(({getDocs,query,where})=>getDocs(query(collection(db,"lineUsers"),where("uid","==",selectedUid)))),
+      ]);
+
+      if(buddyLineSnap.empty){setFeedbackResult({error:`バディ上司（${buddyDocData?.name}）がLINEと連携していません。`});return;}
+
+      await fetch("/api/send-line",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lineUserIds:[buddyLineSnap.docs[0].id],message:buddyMessage})});
+      if(!memberLineSnap.empty){
+        await fetch("/api/send-line",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lineUserIds:[memberLineSnap.docs[0].id],message:memberMessage})});
       }
 
-      // lineUsersからバディ上司のLINE IDを取得
-      const lineSnap = await getDoc(doc(db,"users",buddyUid));
-      const buddyData = lineSnap.data();
-
-      // lineUsersコレクションからバディのLINE UserIDを検索
-      const lineUsersSnap = await import("firebase/firestore").then(({getDocs,query,where})=>
-        getDocs(query(collection(db,"lineUsers"),where("uid","==",buddyUid)))
-      );
-
-      if(lineUsersSnap.empty){
-        setFeedbackResult({error:`バディ上司（${buddyData?.name}）がLINEと連携していません。`});
-        return;
-      }
-
-      const buddyLineUserId = lineUsersSnap.docs[0].id;
-
-      // LINE送信
-      const lineRes = await fetch("/api/send-line", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({lineUserIds:[buddyLineUserId], message:feedback}),
-      });
-      const lineData = await lineRes.json();
-
-      if(lineData.successCount > 0){
-        setFeedbackResult({success:`${buddyData?.name}さんのLINEにフィードバックを送信しました！`});
-      } else {
-        setFeedbackResult({error:"LINE送信に失敗しました。"});
-      }
+      const memberSent = !memberLineSnap.empty ? "＋本人（別内容）" : "（本人はLINE未連携）";
+      setFeedbackResult({success:`${buddyDocData?.name}さん${memberSent}にフィードバックを送信しました！`});
     } catch(e) {
       setFeedbackResult({error:"エラーが発生しました。"});
     } finally {
