@@ -236,7 +236,7 @@ const BottomNav = ({nav,page,setPage}) => {
 const Sidebar = ({nav,page,setPage,currentUser,activePeriod,onLogout}) => (
   <div style={{width:220,flexShrink:0,background:"#fff",borderRight:`0.5px solid ${C.gray[100]}`,display:"flex",flexDirection:"column",height:"100vh"}}>
     <div style={{padding:"18px 18px 14px",borderBottom:`0.5px solid ${C.gray[100]}`}}>
-      <div style={{fontSize:14,fontWeight:700,color:C.purple[600]}}>✦ Stella</div>
+      <div style={{fontSize:16,fontWeight:800,color:C.purple[600],fontFamily:"'Montserrat','Helvetica Neue',sans-serif",letterSpacing:"-0.5px"}}>✦ STELLA</div>
       <div style={{fontSize:11,color:C.gray[400],marginTop:3}}>{activePeriod?.label}</div>
     </div>
     <nav style={{padding:"8px 0",flex:1,overflowY:"auto"}}>
@@ -312,7 +312,7 @@ const LoginPage = ({onLogin}) => {
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.gray[50],padding:16,fontFamily:"system-ui,-apple-system,sans-serif"}}>
       <div style={{width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{fontSize:24,fontWeight:700,color:C.purple[600],marginBottom:4}}>✦ Stella</div>
+          <div style={{fontSize:38,fontWeight:800,color:C.purple[600],marginBottom:4,fontFamily:"'Montserrat','Helvetica Neue',sans-serif",letterSpacing:"-1px"}}>✦ STELLA</div>
           <div style={{fontSize:13,color:C.gray[400]}}>販売実績 · 人事評価 · 研修管理</div>
         </div>
         <div style={{background:"#fff",borderRadius:14,border:`0.5px solid ${C.gray[100]}`,padding:"24px 20px"}}>
