@@ -211,7 +211,27 @@ const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
   }
 };
 
-const BottomNav = ({nav,page,setPage}) => <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>{nav.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 4px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:page===n.id?C.purple[600]:C.gray[400]}}><NavIcon name={n.icon} size={20}/><span style={{fontSize:10,fontWeight:page===n.id?500:400}}>{n.shortLabel||n.label}</span></button>)}</div>;
+const BottomNav = ({nav,page,setPage}) => {
+  // モバイルでは最大6項目に絞る（現在のページを優先表示）
+  const MAX = 6;
+  let displayNav = nav;
+  if(nav.length > MAX){
+    const currentIdx = nav.findIndex(n=>n.id===page);
+    // 現在のページが含まれるようにスライス
+    let start = Math.max(0, Math.min(currentIdx - 2, nav.length - MAX));
+    displayNav = nav.slice(start, start + MAX);
+  }
+  return (
+    <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
+      {displayNav.map(n=>(
+        <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 2px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:page===n.id?C.purple[600]:C.gray[400],minWidth:0}}>
+          <NavIcon name={n.icon} size={18}/>
+          <span style={{fontSize:9,fontWeight:page===n.id?500:400,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{n.shortLabel||n.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
 
 const Sidebar = ({nav,page,setPage,currentUser,activePeriod,onLogout}) => (
   <div style={{width:220,flexShrink:0,background:"#fff",borderRight:`0.5px solid ${C.gray[100]}`,display:"flex",flexDirection:"column",height:"100vh"}}>
@@ -1764,7 +1784,7 @@ const MANAGER_NAV = [
   {id:"training",label:"研修PDCA",shortLabel:"研修",icon:"training"},
   {id:"linesend",label:"LINE送信",shortLabel:"LINE",icon:"linesend"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
-  {id:"settings",label:"設定",shortLabel:"設定\",icon:\"settings"},
+  {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
 
 export default function App() {
