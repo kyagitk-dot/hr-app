@@ -782,22 +782,20 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      // ── 件数報告として解析 ──────────────────────────────
+      // ── 件数報告として解析（AI優先）────────────────────
       const { date, cleanText } = extractDateFromText(text);
-      let parsed = parseReportText(cleanText) || parseReportText(text);
-
-      // キーワード解析失敗→AI解析にフォールバック
-      if (!parsed || (!parsed.carrierId && !parsed.noCarrier)) {
-        const aiParsed = await parseWithAI(text);
-        if (aiParsed) {
-          parsed = aiParsed;
-        } else {
-          await replyMessage(
-            replyToken,
-            "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
-          );
-          continue;
-        }
+      // まずAI解析を試みる
+      let parsed = await parseWithAI(text);
+      // AI失敗時のみキーワード解析にフォールバック
+      if (!parsed) {
+        parsed = parseReportText(cleanText) || parseReportText(text);
+      }
+      if (!parsed) {
+        await replyMessage(
+          replyToken,
+          "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
+        );
+        continue;
       }
 
       // キャリアが不明な場合は登録せず聞き返す
