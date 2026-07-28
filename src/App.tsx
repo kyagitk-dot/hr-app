@@ -1542,6 +1542,70 @@ const TrainingPDCAPage = ({users}) => {
   const [saving, setSaving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(null);
   const [feedbackResult, setFeedbackResult] = useState(null);
+  const [generatingReflection, setGeneratingReflection] = useState(null);
+  const [reflections, setReflections] = useState({});
+
+  const generateReflection = async(r)=>{
+    setGeneratingReflection(r.id);
+    try {
+      const selectedUser = users.find(u=>u.id===selectedUid);
+      const prompt = `以下の研修PDCAを分析して、メンバー本人向けの振り返りレポートを生成してください。
+
+【メンバー】${selectedUser?.name||""}
+【研修名】${r.title}
+【期間】${r.startDate}${r.endDate?` 〜 ${r.endDate}`:""}
+【ステータス】${r.status}
+
+【Plan（計画）】${r.plan||"未入力"}
+【Do（実行）】${r.do_||"未入力"}
+【Check（評価）】${r.check||"未入力"}
+【Act（改善）】${r.act||"未入力"}
+
+以下の形式でJSONのみ返してください（説明不要）：
+{
+  "point": "今週・今回のポイント（良かった点・成果）を2〜3文で",
+  "insight": "気づき・学び（課題も含めて）を2〜3文で",
+  "next": "次のステップ・目標を1〜2文で具体的に"
+}
+前向きで具体的な内容にしてください。`;
+
+      const aiRes = await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})});
+      const aiData = await aiRes.json();
+      if(!aiData.result) throw new Error("生成失敗");
+
+      let reflectionData: any = {};
+      try {
+        const jsonMatch = aiData.result.match(/\{[\s\S]*\}/);
+        if(jsonMatch) reflectionData = JSON.parse(jsonMatch[0]);
+      } catch { reflectionData = {point: aiData.result, insight: "", next: ""}; }
+      const reflection = aiData.result;
+
+      // Firestoreに保存
+      await setDoc(doc(db,"trainingPDCA",selectedUid,"records",r.id),{reflection:reflectionData, reflectionAt:new Date()},{merge:true});
+      setReflections(prev=>({...prev,[r.id]:reflectionData}));
+
+      // LINEで本人に送信
+      const memberLineSnap = await import("firebase/firestore").then(({getDocs,query,where})=>
+        getDocs(query(collection(db,"lineUsers"),where("uid","==",selectedUid)))
+      );
+      if(!memberLineSnap.empty){
+        await fetch("/api/send-line",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            lineUserIds:[memberLineSnap.docs[0].id],
+            message:`【振り返りレポート】\n${r.title}\n\n${reflection}`
+          }),
+        });
+        setFeedbackResult({success:"振り返りを生成してLINEで送信しました！"});
+      } else {
+        setFeedbackResult({success:"振り返りを生成しました！（LINE未連携のため送信なし）"});
+      }
+    } catch {
+      setFeedbackResult({error:"振り返りの生成に失敗しました。"});
+    } finally {
+      setGeneratingReflection(null);
+    }
+  };
 
   useEffect(()=>{
     if(!selectedUid) return;
@@ -1770,12 +1834,46 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
                 <Btn small primary onClick={()=>sendAIFeedback(r)} disabled={sendingFeedback===r.id}>
                   {sendingFeedback===r.id?"AI分析中...":"✦ AIフィードバックをLINEで送る"}
                 </Btn>
-                {feedbackResult&&sendingFeedback===null&&(
+                <Btn small onClick={()=>generateReflection(r)} disabled={generatingReflection===r.id} style={{background:C.teal[50],border:`0.5px solid ${C.teal[200]}`,color:C.teal[800]}}>
+                  {generatingReflection===r.id?"生成中...":"📊 振り返り生成"}
+                </Btn>
+                {feedbackResult&&(sendingFeedback===null)&&(generatingReflection===null)&&(
                   <span style={{fontSize:12,color:feedbackResult.error?C.coral[800]:C.teal[800]}}>
                     {feedbackResult.error||feedbackResult.success}
                   </span>
                 )}
               </div>
+              {(reflections[r.id]||r.reflection)&&(()=>{
+                const ref = reflections[r.id]||r.reflection;
+                const isObj = typeof ref === "object";
+                const point = isObj ? ref.point : ref;
+                const insight = isObj ? ref.insight : "";
+                const next = isObj ? ref.next : "";
+                return (
+                  <div style={{marginTop:12,background:"#fff",border:`0.5px solid ${C.gray[100]}`,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{background:C.purple[800],padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <div style={{fontSize:12,fontWeight:500,color:"#fff"}}>📊 振り返りレポート</div>
+                      <div style={{fontSize:10,color:C.purple[200]}}>{r.reflectionAt?.toDate?.()?.toLocaleDateString("ja-JP")||"AI生成"}</div>
+                    </div>
+                    <div style={{padding:"14px 16px",position:"relative"}}>
+                      <div style={{position:"absolute",left:22,top:14,bottom:14,width:1,background:C.gray[100]}}/>
+                      {[
+                        {dot:C.teal[400],label:"今回のポイント",color:C.teal,text:point},
+                        ...(insight?[{dot:C.blue[400],label:"気づき・学び",color:C.blue,text:insight}]:[]),
+                        ...(next?[{dot:C.purple[400],label:"次のステップ",color:C.purple,text:next}]:[]),
+                      ].map((item,i)=>(
+                        <div key={i} style={{display:"flex",gap:12,marginBottom:i<2?14:0,position:"relative"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:item.dot,marginTop:5,flexShrink:0,zIndex:1}}/>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:11,fontWeight:600,color:item.color[800],marginBottom:3}}>{item.label}</div>
+                            <div style={{fontSize:13,color:C.gray[800],lineHeight:1.8}}>{item.text}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </Card>
             );
           })}
