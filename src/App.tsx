@@ -1476,7 +1476,7 @@ const EmployeeTrainingPage = ({uid}) => {
       }
     );
     return ()=>{ unsub1(); unsub2(); };
-  },[uid]);id]);
+  },[uid]);
 
   const saveComment = async(recordId, comment)=>{
     setSavingComment(recordId);
