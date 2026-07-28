@@ -1,0 +1,37 @@
+name: PDCA自動振り返り生成
+
+on:
+  schedule:
+    # 毎週月曜 9:00 JST（UTC 0:00）
+    - cron: '0 0 * * 1'
+    # 毎月1日 9:00 JST（UTC 0:00）
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+    inputs:
+      type:
+        description: '振り返りタイプ（weekly/monthly）'
+        required: true
+        default: 'weekly'
+
+jobs:
+  generate-reflection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: PDCA振り返り生成
+        run: |
+          # 振り返りタイプを判定
+          DAY=$(date +%d)
+          DOW=$(date +%u)
+          
+          if [ "${{ github.event.inputs.type }}" = "monthly" ] || [ "$DAY" = "01" ]; then
+            TYPE="monthly"
+            LABEL="月次"
+          else
+            TYPE="weekly"
+            LABEL="週次"
+          fi
+          
+          curl -X POST "${{ secrets.APP_URL }}/api/pdca-reflection" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -d "{\"type\": \"$TYPE\", \"label\": \"$LABEL\"}"
