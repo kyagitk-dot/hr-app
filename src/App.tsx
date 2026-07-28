@@ -1709,14 +1709,17 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
       ):(
         <div>
           <div style={{fontSize:12,color:C.gray[400],marginBottom:10}}>{selectedUser?.name}さんの研修PDCA（{records.length}件）</div>
-          {records.map(r=>(
-            <Card key={r.id} style={{borderLeft:`3px solid ${statusColor(r.status)[400]}`}}>
-              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12}}>
+          {records.map((r,idx)=>{
+            const prev = records[idx+1]; // 一つ前の記録
+            return (
+            <Card key={r.id} style={{borderLeft:`3px solid ${statusColor(r.status)[500]}`,background:"#fff"}}>
+              {/* ヘッダー */}
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14}}>
                 <div>
-                  <div style={{fontSize:14,fontWeight:600,color:C.gray[800],marginBottom:4}}>{r.title}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.gray[900],marginBottom:5}}>{r.title}</div>
                   <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:statusColor(r.status)[50],color:statusColor(r.status)[800],fontWeight:600}}>{r.status}</span>
-                    <span style={{fontSize:11,color:C.gray[400]}}>{r.startDate}{r.endDate?` 〜 ${r.endDate}`:""}</span>
+                    <span style={{fontSize:11,padding:"3px 10px",borderRadius:12,background:statusColor(r.status)[100],color:statusColor(r.status)[800],fontWeight:700}}>{r.status}</span>
+                    <span style={{fontSize:11,color:C.gray[500]}}>{r.startDate}{r.endDate?` 〜 ${r.endDate}`:""}</span>
                   </div>
                 </div>
                 <div style={{display:"flex",gap:6}}>
@@ -1724,13 +1727,46 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
                   <button onClick={()=>deleteRecord(r.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.gray[400],fontSize:16}}>×</button>
                 </div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <PDCASection label="📋 Plan（計画）" value={r.plan} color={C.blue} placeholder=""/>
-                <PDCASection label="✅ Do（実行）" value={r.do_} color={C.teal} placeholder=""/>
-                <PDCASection label="🔍 Check（評価）" value={r.check} color={C.amber} placeholder=""/>
-                <PDCASection label="🔄 Act（改善）" value={r.act} color={C.purple} placeholder=""/>
-              </div>
-              <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+
+              {/* 最新と前回の比較表示 */}
+              {prev?(
+                <div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:2,marginBottom:12}}>
+                    <div style={{fontSize:11,fontWeight:600,color:C.gray[500],textAlign:"center",padding:"4px 0",background:C.gray[50],borderRadius:"6px 0 0 6px"}}>前回（{prev.startDate}）</div>
+                    <div style={{fontSize:11,fontWeight:600,color:C.purple[700],textAlign:"center",padding:"4px 0",background:C.purple[50],borderRadius:"0 6px 6px 0"}}>最新（{r.startDate}）</div>
+                  </div>
+                  {[
+                    {label:"📋 Plan",curr:r.plan,prev:prev.plan,color:C.blue},
+                    {label:"✅ Do",curr:r.do_,prev:prev.do_,color:C.teal},
+                    {label:"🔍 Check",curr:r.check,prev:prev.check,color:C.amber},
+                    {label:"🔄 Act",curr:r.act,prev:prev.act,color:C.purple},
+                  ].map(({label,curr,prev:prevVal,color})=>(
+                    <div key={label} style={{marginBottom:8}}>
+                      <div style={{fontSize:11,fontWeight:700,color:color[800],marginBottom:4}}>{label}</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:2}}>
+                        <div style={{background:C.gray[50],borderRadius:"6px 0 0 6px",padding:"8px 10px",fontSize:12,color:C.gray[500],lineHeight:1.6,whiteSpace:"pre-wrap",minHeight:40}}>{prevVal||<span style={{color:C.gray[300],fontStyle:"italic"}}>未入力</span>}</div>
+                        <div style={{background:color[50],borderRadius:"0 6px 6px 0",padding:"8px 10px",fontSize:12,color:color[900],lineHeight:1.6,whiteSpace:"pre-wrap",minHeight:40,fontWeight:curr?400:300}}>{curr||<span style={{color:C.gray[300],fontStyle:"italic"}}>未入力</span>}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ):(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {[
+                    {label:"📋 Plan（計画）",val:r.plan,color:C.blue},
+                    {label:"✅ Do（実行）",val:r.do_,color:C.teal},
+                    {label:"🔍 Check（評価）",val:r.check,color:C.amber},
+                    {label:"🔄 Act（改善）",val:r.act,color:C.purple},
+                  ].map(({label,val,color})=>(
+                    <div key={label} style={{background:color[50],borderRadius:8,padding:"10px 12px"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:color[800],marginBottom:5}}>{label}</div>
+                      <div style={{fontSize:13,color:C.gray[800],lineHeight:1.7,whiteSpace:"pre-wrap"}}>{val||<span style={{color:C.gray[300],fontStyle:"italic"}}>未入力</span>}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{marginTop:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`0.5px solid ${C.gray[100]}`,paddingTop:10}}>
                 <Btn small primary onClick={()=>sendAIFeedback(r)} disabled={sendingFeedback===r.id}>
                   {sendingFeedback===r.id?"AI分析中...":"✦ AIフィードバックをLINEで送る"}
                 </Btn>
@@ -1741,7 +1777,8 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
                 )}
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
