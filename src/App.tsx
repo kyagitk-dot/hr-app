@@ -1455,10 +1455,11 @@ const EmployeeTrainingPage = ({uid}) => {
   const [records, setRecords] = useState([]);
   const [commentInputs, setCommentInputs] = useState({});
   const [savingComment, setSavingComment] = useState(null);
+  const [afterReports, setAfterReports] = useState([]);
 
   useEffect(()=>{
     if(!uid) return;
-    const unsub = onSnapshot(
+    const unsub1 = onSnapshot(
       collection(db,"trainingPDCA",uid,"records"),
       snap=>{
         const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -1466,8 +1467,16 @@ const EmployeeTrainingPage = ({uid}) => {
         setRecords(recs);
       }
     );
-    return unsub;
-  },[uid]);
+    const unsub2 = onSnapshot(
+      collection(db,"trainingAfterReports",uid,"reports"),
+      snap=>{
+        const reps = snap.docs.map(d=>({id:d.id,...d.data()}));
+        reps.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+        setAfterReports(reps);
+      }
+    );
+    return ()=>{ unsub1(); unsub2(); };
+  },[uid]);id]);
 
   const saveComment = async(recordId, comment)=>{
     setSavingComment(recordId);
@@ -1525,11 +1534,40 @@ const EmployeeTrainingPage = ({uid}) => {
           ))}
         </div>
       )}
+
+      {/* 研修後報告セクション */}
+      <div style={{marginTop:20}}>
+        <div style={{fontSize:13,fontWeight:500,color:C.gray[800],marginBottom:10}}>📝 研修後フィードバック</div>
+        {afterReports.length===0?(
+          <div style={{padding:"12px 14px",background:C.gray[50],borderRadius:8,fontSize:12,color:C.gray[400]}}>
+            💡 LINEで「研修後報告：できるようになったこと」と送るとAIがフィードバックしてここに記録されます
+          </div>
+        ):(
+          <div>
+            <div style={{fontSize:11,color:C.gray[400],marginBottom:10}}>LINEで「研修後報告：できるようになったこと」と送ると記録されます</div>
+            {afterReports.map(r=>(
+              <Card key={r.id} style={{borderLeft:`3px solid ${C.teal[400]}`}}>
+                <div style={{fontSize:11,color:C.gray[400],marginBottom:8}}>{r.date}</div>
+                <div style={{fontSize:13,color:C.gray[800],lineHeight:1.7,marginBottom:10,padding:"8px 10px",background:C.gray[50],borderRadius:6}}>{r.content}</div>
+                {r.feedback&&(
+                  <div style={{position:"relative",paddingLeft:16}}>
+                    <div style={{position:"absolute",left:4,top:4,bottom:4,width:1,background:C.teal[200]}}/>
+                    {r.feedback.split("\n").filter(Boolean).map((line,i)=>(
+                      <div key={i} style={{display:"flex",gap:8,marginBottom:6}}>
+                        <div style={{width:6,height:6,borderRadius:"50%",background:C.teal[400],marginTop:5,flexShrink:0}}/>
+                        <div style={{fontSize:13,color:C.gray[800],lineHeight:1.7}}>{line}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
-
-// ── 研修PDCAページ ─────────────────────────────────────────────
 const TrainingPDCAPage = ({users}) => {
   const [selectedUid, setSelectedUid] = useState(users[0]?.id||"");
   const [records, setRecords] = useState([]);
@@ -1544,6 +1582,64 @@ const TrainingPDCAPage = ({users}) => {
   const [feedbackResult, setFeedbackResult] = useState(null);
   const [generatingReflection, setGeneratingReflection] = useState(null);
   const [reflections, setReflections] = useState({});
+  const [sendingQuestion, setSendingQuestion] = useState(null);
+
+  const sendCheckQuestions = async(r)=>{
+    setSendingQuestion(r.id);
+    setFeedbackResult(null);
+    try {
+      const selectedUser = users.find(u=>u.id===selectedUid);
+      const prompt = `以下の研修PDCAを元に、研修内容が実践できているか確認するための質問を3つ生成してください。
+
+【研修名】${r.title}
+【Plan（計画）】${r.plan||"未入力"}
+【Do（実行）】${r.do_||"未入力"}
+【Check（評価）】${r.check||"未入力"}
+【Act（改善）】${r.act||"未入力"}
+
+以下の形式でJSON配列のみ返してください：
+["質問1","質問2","質問3"]
+
+質問のポイント：
+・Planで立てた目標が実践できているか確認する
+・CheckやActで挙げた課題の改善状況を聞く
+・具体的なエピソードを引き出す質問にする
+・親しみやすいトーンで`;
+
+      const aiRes = await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})});
+      const aiData = await aiRes.json();
+      let questions: string[] = [];
+      try {
+        const match = aiData.result.match(/\[[\s\S]*\]/);
+        if(match) questions = JSON.parse(match[0]);
+      } catch { questions = [aiData.result]; }
+
+      if(questions.length===0) throw new Error("質問生成失敗");
+
+      const memberMsg = `【研修確認クイズ】\n${r.title}\n\n以下の質問に答えてみてください！\n\n${questions.map((q,i)=>`Q${i+1}. ${q}`).join("\n\n")}\n\n「研修後報告：〇〇です」の形式でLINEに返信してください📝`;
+      const buddyMsg = `【研修確認クイズ（バディ確認用）】\n${selectedUser?.name}さん / ${r.title}\n\n本人に以下の質問を送りました。回答内容をご確認ください。\n\n${questions.map((q,i)=>`Q${i+1}. ${q}`).join("\n\n")}`;
+
+      // 本人とバディ上司のLINE IDを取得
+      const [memberLineSnap, buddyLineSnap] = await Promise.all([
+        import("firebase/firestore").then(({getDocs,query,where})=>getDocs(query(collection(db,"lineUsers"),where("uid","==",selectedUid)))),
+        selectedUser?.buddyUid
+          ? import("firebase/firestore").then(({getDocs,query,where})=>getDocs(query(collection(db,"lineUsers"),where("uid","==",selectedUser.buddyUid))))
+          : Promise.resolve({empty:true,docs:[]}),
+      ]);
+
+      const sends = [];
+      if(!memberLineSnap.empty) sends.push(fetch("/api/send-line",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lineUserIds:[memberLineSnap.docs[0].id],message:memberMsg})}));
+      if(!buddyLineSnap.empty) sends.push(fetch("/api/send-line",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lineUserIds:[buddyLineSnap.docs[0].id],message:buddyMsg})}));
+      await Promise.all(sends);
+
+      const sentTo = [!memberLineSnap.empty?"本人":null, !buddyLineSnap.empty?"バディ上司":null].filter(Boolean).join("＋");
+      setFeedbackResult({success:`確認質問を${sentTo}に送信しました！`});
+    } catch {
+      setFeedbackResult({error:"質問の生成・送信に失敗しました。"});
+    } finally {
+      setSendingQuestion(null);
+    }
+  };
 
   const generateReflection = async(r)=>{
     setGeneratingReflection(r.id);
@@ -1836,6 +1932,9 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
                 </Btn>
                 <Btn small onClick={()=>generateReflection(r)} disabled={generatingReflection===r.id} style={{background:C.teal[50],border:`0.5px solid ${C.teal[200]}`,color:C.teal[800]}}>
                   {generatingReflection===r.id?"生成中...":"📊 振り返り生成"}
+                </Btn>
+                <Btn small onClick={()=>sendCheckQuestions(r)} disabled={sendingQuestion===r.id} style={{background:C.amber[50],border:`0.5px solid ${C.amber[200]}`,color:C.amber[800]}}>
+                  {sendingQuestion===r.id?"送信中...":"❓ 確認質問を送る"}
                 </Btn>
                 {feedbackResult&&(sendingFeedback===null)&&(generatingReflection===null)&&(
                   <span style={{fontSize:12,color:feedbackResult.error?C.coral[800]:C.teal[800]}}>
