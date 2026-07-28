@@ -500,6 +500,55 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
+      // ── 研修後フィードバック ──────────────────────────────
+      if (text.startsWith("研修後報告：") || text.startsWith("研修後報告:") || text.startsWith("研修報告：") || text.startsWith("研修報告:")) {
+        const content = text.replace(/^研修[後]?報告[：:]\s*/, "").trim();
+        if (!content) {
+          await replyMessage(replyToken, "研修後の内容を入力してください。\n\n例：研修後報告：ロープレを実践して、MNP転入の手続き説明が5分以内にできるようになりました。お客様の不安を先に解消してからクロージングする方法も身につきました。");
+          continue;
+        }
+
+        // AIでフィードバック生成
+        try {
+          const prompt = `以下は研修を受けたスタッフからの「研修後にできるようになったこと」の報告です。
+内容を読んで、具体的で前向きなフィードバックを返してください。
+
+【報告内容】
+${content}
+
+以下の構成で200字以内で日本語で返してください：
+1. 💪 成長を認めるメッセージ（具体的に褒める）
+2. 🌟 さらに伸ばすためのアドバイス（1点）
+3. 🎯 次のチャレンジ提案（1点）
+親しみやすく励ましのトーンで。`;
+
+          const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {"Content-Type":"application/json","x-api-key": process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
+            body: JSON.stringify({model:"claude-haiku-4-5",max_tokens:600,messages:[{role:"user",content:prompt}]}),
+          });
+          const aiData = await aiRes.json();
+          const feedback = aiData.content?.[0]?.text || "フィードバックを生成できませんでした。";
+
+          // Firestoreに保存（lineUsers経由でuidを取得）
+          const lineUserData = linkData;
+          if (lineUserData?.uid && !lineUserData.uid.startsWith("guest_")) {
+            const today = new Date().toLocaleDateString("sv-SE");
+            await db.collection("trainingAfterReports").doc(lineUserData.uid).collection("reports").add({
+              content,
+              feedback,
+              date: today,
+              createdAt: new Date(),
+            });
+          }
+
+          await replyMessage(replyToken, `【研修後フィードバック】\n\n${feedback}`);
+        } catch {
+          await replyMessage(replyToken, "フィードバックの生成に失敗しました。もう一度試してください。");
+        }
+        continue;
+      }
+
       // ── リッチメニュー：フォーマットを見る ─────────────
       if (text.includes("フォーマット")) {
         await replyMessage(
