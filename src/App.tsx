@@ -1728,6 +1728,41 @@ const TrainingPDCAPage = ({users}) => {
     setShowForm(true);
   };
 
+  // 週次エントリー追加
+  const [showEntryForm, setShowEntryForm] = useState(false);
+  const [entryTargetId, setEntryTargetId] = useState(null);
+  const [entryForm, setEntryForm] = useState({date:new Date().toLocaleDateString("sv-SE"),plan:"",do_:"",check:"",act:""});
+  const [savingEntry, setSavingEntry] = useState(false);
+
+  const openAddEntry = (r)=>{
+    setEntryTargetId(r.id);
+    // 直前のエントリーのActを次のPlanとして引き継ぐ
+    const entries = r.entries||[];
+    const lastEntry = entries[entries.length-1];
+    setEntryForm({date:new Date().toLocaleDateString("sv-SE"),plan:lastEntry?.act||"",do_:"",check:"",act:""});
+    setShowEntryForm(true);
+  };
+
+  const saveEntry = async()=>{
+    if(!entryForm.plan.trim()){alert("Plan（計画）は必須です");return;}
+    setSavingEntry(true);
+    const targetRecord = records.find(r=>r.id===entryTargetId);
+    const entries = targetRecord?.entries||[];
+    const newEntry = {
+      week: entries.length+1,
+      date: entryForm.date,
+      plan: entryForm.plan,
+      do_: entryForm.do_,
+      check: entryForm.check,
+      act: entryForm.act,
+    };
+    await setDoc(doc(db,"trainingPDCA",selectedUid,"records",entryTargetId),{
+      entries:[...entries,newEntry],
+      updatedAt:new Date(),
+    },{merge:true});
+    setShowEntryForm(false);setSavingEntry(false);
+  };
+
   const save = async()=>{
     if(!form.title.trim()||!form.plan.trim()){alert("研修名と計画（Plan）は必須です");return;}
     setSaving(true);
@@ -1735,7 +1770,9 @@ const TrainingPDCAPage = ({users}) => {
     if(editingId){
       await setDoc(doc(db,"trainingPDCA",selectedUid,"records",editingId),data,{merge:true});
     } else {
-      await setDoc(doc(collection(db,"trainingPDCA",selectedUid,"records")),{...data,createdAt:new Date()});
+      // 新規作成時は最初のエントリーも作成
+      const firstEntry = {week:1,date:form.startDate,plan:form.plan,do_:form.do_,check:form.check,act:form.act};
+      await setDoc(doc(collection(db,"trainingPDCA",selectedUid,"records")),{...data,entries:[firstEntry],createdAt:new Date()});
     }
     setShowForm(false);setSaving(false);
   };
@@ -1816,6 +1853,18 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
         <Btn primary onClick={openNew}>+ 研修を追加</Btn>
       </div>
 
+      {showEntryForm&&entryTargetId&&<Modal title="今週の内容を追加" onClose={()=>setShowEntryForm(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{fontSize:12,color:C.purple[800],padding:"8px 10px",background:C.purple[50],borderRadius:6}}>前回のActが次のPlanに引き継がれています。確認・修正してください。</div>
+          <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>日付</div><input type="date" value={entryForm.date} onChange={e=>setEntryForm(f=>({...f,date:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
+          <div><div style={{fontSize:12,color:C.blue[600],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div><Textarea value={entryForm.plan} onChange={v=>setEntryForm(f=>({...f,plan:v}))} rows={3} placeholder="今週の目標・計画"/></div>
+          <div><div style={{fontSize:12,color:C.teal[600],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div><Textarea value={entryForm.do_} onChange={v=>setEntryForm(f=>({...f,do_:v}))} rows={3} placeholder="実際に行ったこと"/></div>
+          <div><div style={{fontSize:12,color:C.amber[700],fontWeight:600,marginBottom:4}}>🔍 Check（評価）</div><Textarea value={entryForm.check} onChange={v=>setEntryForm(f=>({...f,check:v}))} rows={3} placeholder="成果・課題・気づき"/></div>
+          <div><div style={{fontSize:12,color:C.purple[600],fontWeight:600,marginBottom:4}}>🔄 Act（改善）</div><Textarea value={entryForm.act} onChange={v=>setEntryForm(f=>({...f,act:v}))} rows={3} placeholder="次週への改善・アクション"/></div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn onClick={()=>setShowEntryForm(false)}>キャンセル</Btn><Btn primary onClick={saveEntry} disabled={savingEntry}>{savingEntry?"保存中...":"追加"}</Btn></div>
+        </div>
+      </Modal>}
+
       {showForm&&<Modal title={editingId?"研修PDCAを編集":"研修PDCAを追加"} onClose={()=>setShowForm(false)}>
         <div style={{display:"flex",flexDirection:"column",gap:13}}>
           <div>
@@ -1883,14 +1932,48 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
                   </div>
                 </div>
                 <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>openAddEntry(r)} style={{border:`0.5px solid ${C.purple[300]}`,background:C.purple[50],borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",color:C.purple[700],fontFamily:"inherit",fontWeight:500}}>+ 今週を追加</button>
                   <button onClick={()=>openEdit(r)} style={{border:`0.5px solid ${C.gray[200]}`,background:"#fff",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",color:C.gray[600],fontFamily:"inherit"}}>編集</button>
                   <button onClick={()=>deleteRecord(r.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.gray[400],fontSize:16}}>×</button>
                 </div>
               </div>
 
-              {/* 最新と前回の比較表示 */}
-              {prev?(
-                <div>
+              {/* 週次履歴タイムライン */}
+              {(r.entries||[]).length>0&&(
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:11,color:C.gray[400],marginBottom:8}}>週次履歴（{(r.entries||[]).length}週）</div>
+                  <div style={{position:"relative",paddingLeft:16}}>
+                    <div style={{position:"absolute",left:3,top:0,bottom:0,width:1,background:C.gray[100]}}/>
+                    {[...(r.entries||[])].reverse().map((entry,ei)=>{
+                      const isLatest = ei===0;
+                      const prevEntry = [...(r.entries||[])].reverse()[ei+1];
+                      return (
+                        <div key={ei} style={{marginBottom:12,position:"relative"}}>
+                          <div style={{position:"absolute",left:-13,top:4,width:8,height:8,borderRadius:"50%",background:isLatest?C.purple[400]:C.gray[200],border:`2px solid ${isLatest?C.purple[200]:C.gray[100]}`}}/>
+                          <div style={{background:isLatest?C.purple[50]:"#fff",border:`0.5px solid ${isLatest?C.purple[200]:C.gray[100]}`,borderRadius:8,padding:"8px 10px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                              <span style={{fontSize:11,fontWeight:600,color:isLatest?C.purple[700]:C.gray[500]}}>第{entry.week||((r.entries||[]).length-ei)}週</span>
+                              <span style={{fontSize:10,color:C.gray[400]}}>{entry.date}</span>
+                              {isLatest&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:C.purple[100],color:C.purple[800],fontWeight:600}}>最新</span>}
+                            </div>
+                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                              {[["📋 Plan",entry.plan,C.blue],["✅ Do",entry.do_,C.teal],["🔍 Check",entry.check,C.amber],["🔄 Act",entry.act,C.purple]].map(([label,val,color])=>(
+                                <div key={label} style={{background:color[50],borderRadius:6,padding:"6px 8px"}}>
+                                  <div style={{fontSize:10,fontWeight:600,color:color[800],marginBottom:2}}>{label}</div>
+                                  <div style={{fontSize:11,color:C.gray[800],lineHeight:1.6,whiteSpace:"pre-wrap"}}>{val||<span style={{color:C.gray[300]}}>未入力</span>}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 最新と前回の比較表示（entriesがない場合） */}
+              {(r.entries||[]).length===0&&prev?(<div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:2,marginBottom:12}}>
                     <div style={{fontSize:11,fontWeight:600,color:C.gray[500],textAlign:"center",padding:"4px 0",background:C.gray[50],borderRadius:"6px 0 0 6px"}}>前回（{prev.startDate}）</div>
                     <div style={{fontSize:11,fontWeight:600,color:C.purple[700],textAlign:"center",padding:"4px 0",background:C.purple[50],borderRadius:"0 6px 6px 0"}}>最新（{r.startDate}）</div>
