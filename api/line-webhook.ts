@@ -633,7 +633,7 @@ export default async function handler(req: any, res: any) {
           const date = todayStr();
           const ref = db.collection("salesReports").doc(uid).collection("daily").doc(date);
           const snap = await ref.get();
-          if (snap.exists()) {
+          if (snap.exists) {
             await ref.delete();
             await replyMessage(
               replyToken,
@@ -840,7 +840,7 @@ export default async function handler(req: any, res: any) {
       // 代理店名・店舗名がない場合の処理
       if (parsed.noStore) {
         // 今日すでに店舗名が登録済みなら引き継ぐ
-        if (snap.exists()) {
+        if (snap.exists) {
           const existingData = snap.data()!;
           if (existingData.storeName || existingData.agency) {
             parsed.storeName = existingData.storeName || "";
