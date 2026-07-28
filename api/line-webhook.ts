@@ -17,6 +17,74 @@ const db = getFirestore();
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+
+// ── AI解析関数（キーワード解析で認識できない場合のフォールバック）
+async function parseWithAI(text: string): Promise<any | null> {
+  if (!ANTHROPIC_API_KEY) return null;
+  try {
+    const prompt = `以下のメッセージは携帯ショップの販売報告です。内容を解析してJSONで返してください。
+
+メッセージ：「${text}」
+
+以下のJSON形式のみで返答してください（説明不要）：
+{
+  "carrierId": "docomo|ahamo|au|softbank|ymobile|uq|other|null",
+  "storeName": "店舗名またはnull",
+  "agency": "代理店名またはnull",
+  "entry": {
+    "newContract": 数値,
+    "deviceChange": 数値,
+    "mnpIn": 数値,
+    "portIn": 数値,
+    "netLine": 数値,
+    "creditCardNormal": 数値,
+    "creditCardGold": 数値,
+    "energy": 数値
+  },
+  "peripheralAmount": 数値
+}
+
+キャリア対応：docomo/ドコモ→docomo、ahamo/アハモ→ahamo、au/AU→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、その他格安SIM→other
+項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカ/ノーマル/CC→creditCardNormal、ゴールド→creditCardGold、電気/ガス→energy、周辺機器/アクセサリ→peripheralAmount
+件数が不明な項目は0にしてください。carrierId が判断できない場合は null にしてください。`;
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 500,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const data = await res.json();
+    const raw = data.content?.[0]?.text || "";
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.carrierId || parsed.carrierId === "null") return null;
+    // entryから0の項目を除去
+    const entry: any = {};
+    for (const [k, v] of Object.entries(parsed.entry || {})) {
+      if ((v as number) > 0) entry[k] = v;
+    }
+    return {
+      carrierId: parsed.carrierId,
+      storeName: parsed.storeName || "",
+      agency: parsed.agency || "",
+      entry,
+      peripheralAmount: parsed.peripheralAmount || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 
 const CARRIER_KEYWORDS: Record<string, string> = {
   docomo: "docomo",
@@ -49,6 +117,8 @@ const FIELD_KEYWORDS: Record<string, string> = {
   新規: "newContract",
   機種変更: "deviceChange",
   機変: "deviceChange",
+  きへん: "deviceChange",
+  端末変更: "deviceChange",
   mnp転入: "mnpIn",
   mnp転出: "mnpOut",
   転出: "mnpOut",
@@ -59,7 +129,9 @@ const FIELD_KEYWORDS: Record<string, string> = {
   転換: "mnpIn",
   転入: "mnpIn",
   mnp: "mnpIn",
+  ポートイン: "mnpIn",
   番号移行: "portIn",
+  番移: "portIn",
   光回線: "netLine",
   ネット回線: "netLine",
   インターネット: "netLine",
@@ -68,6 +140,12 @@ const FIELD_KEYWORDS: Record<string, string> = {
   wifi: "netLine",
   "wi-fi": "netLine",
   光: "netLine",
+  固定: "netLine",
+  固定回線: "netLine",
+  BB: "netLine",
+  bb: "netLine",
+  ブロードバンド: "netLine",
+  フレッツ: "netLine",
   paypayカード: "creditCardNormal",
   ペイペイカード: "creditCardNormal",
   ぺいぺいかーど: "creditCardNormal",
@@ -153,6 +231,9 @@ const todayStr = () => new Date().toLocaleDateString("sv-SE");
 // テキストから日付を抽出する関数
 // 「7月6日」「7/6」「6日」などに対応
 function extractDateFromText(text: string): { date: string; cleanText: string } {
+  // 全角数字を半角に変換
+  text = text.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+  text = text.replace(/　/g, " ");
   const now = new Date();
   const year = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -191,6 +272,11 @@ function extractDateFromText(text: string): { date: string; cleanText: string } 
 }
 
 function parseReportText(text: string) {
+  // 全角数字・英字を半角に変換
+  text = text.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+  text = text.replace(/[Ａ-Ｚａ-ｚ]/g, s => String.fromCharCode(s.charCodeAt(s.length - 1) - 0xFEE0));
+  // 全角スペースを半角に
+  text = text.replace(/　/g, " ");
   const lower = text.toLowerCase();
 
   let carrierId: string | null = null;
@@ -698,13 +784,20 @@ export default async function handler(req: any, res: any) {
 
       // ── 件数報告として解析 ──────────────────────────────
       const { date, cleanText } = extractDateFromText(text);
-      const parsed = parseReportText(cleanText) || parseReportText(text);
-      if (!parsed) {
-        await replyMessage(
-          replyToken,
-          "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
-        );
-        continue;
+      let parsed = parseReportText(cleanText) || parseReportText(text);
+
+      // キーワード解析失敗→AI解析にフォールバック
+      if (!parsed || (!parsed.carrierId && !parsed.noCarrier)) {
+        const aiParsed = await parseWithAI(text);
+        if (aiParsed) {
+          parsed = aiParsed;
+        } else {
+          await replyMessage(
+            replyToken,
+            "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
+          );
+          continue;
+        }
       }
 
       // キャリアが不明な場合は登録せず聞き返す
