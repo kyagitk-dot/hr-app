@@ -1571,6 +1571,7 @@ const EmployeeTrainingPage = ({uid}) => {
 const TrainingPDCAPage = ({users}) => {
   const [selectedUid, setSelectedUid] = useState(users[0]?.id||"");
   const [records, setRecords] = useState([]);
+  const [afterReports, setAfterReports] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
@@ -1705,7 +1706,7 @@ const TrainingPDCAPage = ({users}) => {
 
   useEffect(()=>{
     if(!selectedUid) return;
-    const unsub = onSnapshot(
+    const unsub1 = onSnapshot(
       collection(db,"trainingPDCA",selectedUid,"records"),
       snap=>{
         const recs = snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -1713,7 +1714,15 @@ const TrainingPDCAPage = ({users}) => {
         setRecords(recs);
       }
     );
-    return unsub;
+    const unsub2 = onSnapshot(
+      collection(db,"trainingAfterReports",selectedUid,"reports"),
+      snap=>{
+        const reps = snap.docs.map(d=>({id:d.id,...d.data()}));
+        reps.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+        setAfterReports(reps);
+      }
+    );
+    return ()=>{ unsub1(); unsub2(); };
   },[selectedUid]);
 
   const openNew = ()=>{
@@ -1734,13 +1743,44 @@ const TrainingPDCAPage = ({users}) => {
   const [entryForm, setEntryForm] = useState({date:new Date().toLocaleDateString("sv-SE"),plan:"",do_:"",check:"",act:""});
   const [prevEntryData, setPrevEntryData] = useState(null);
   const [savingEntry, setSavingEntry] = useState(false);
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+
+  const suggestPlan = async()=>{
+    if(!prevEntryData) return;
+    setGeneratingPlan(true);
+    try {
+      const prompt = `以下の研修PDCAの前週内容を元に、今週のPlan（計画）を提案してください。
+
+【前週のCheck（評価・気づき）】
+${prevEntryData.check||"未入力"}
+
+【前週のAct（改善・次のアクション）】
+${prevEntryData.act||"未入力"}
+
+今週のPlanとして具体的で実践しやすい計画を150字以内で提案してください。
+・前週のActを踏まえた内容にする
+・数値目標を含める（例：週3回、5件以上）
+・実践しやすい具体的な行動を書く
+提案文のみ返してください。`;
+
+      const res = await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})});
+      const data = await res.json();
+      if(data.result) setEntryForm(f=>({...f,plan:data.result}));
+    } catch {
+      alert("提案の生成に失敗しました。");
+    } finally {
+      setGeneratingPlan(false);
+    }
+  };
 
   const openAddEntry = (r)=>{
     setEntryTargetId(r.id);
     const entries = r.entries||[];
-    const lastEntry = entries[entries.length-1];
-    setPrevEntryData(lastEntry||null);
-    setEntryForm({date:new Date().toLocaleDateString("sv-SE"),plan:lastEntry?.act||"",do_:"",check:"",act:""});
+    const lastEntry = entries.length>0 ? entries[entries.length-1] : null;
+    // entriesがない場合はレコード自体のplan/do/check/actを前週として使う
+    const prevData = lastEntry || (r.plan||r.do_||r.check||r.act ? {plan:r.plan,do_:r.do_,check:r.check,act:r.act,date:r.startDate,week:"初回"} : null);
+    setPrevEntryData(prevData||null);
+    setEntryForm({date:new Date().toLocaleDateString("sv-SE"),plan:prevData?.act||"",do_:"",check:"",act:""});
     setShowEntryForm(true);
   };
 
@@ -1871,7 +1911,13 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
           )}
           <div style={{fontSize:12,color:C.purple[800],padding:"6px 10px",background:C.purple[50],borderRadius:6}}>⬆️ 前週のActが今週のPlanに引き継がれています</div>
           <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>日付</div><input type="date" value={entryForm.date} onChange={e=>setEntryForm(f=>({...f,date:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
-          <div><div style={{fontSize:12,color:C.blue[600],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div><Textarea value={entryForm.plan} onChange={v=>setEntryForm(f=>({...f,plan:v}))} rows={3} placeholder="今週の目標・計画"/></div>
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+              <div style={{fontSize:12,color:C.blue[600],fontWeight:600}}>📋 Plan（計画）*</div>
+              {prevEntryData&&<button onClick={suggestPlan} disabled={generatingPlan} style={{fontSize:11,padding:"3px 10px",borderRadius:6,border:`0.5px solid ${C.purple[300]}`,background:C.purple[50],color:C.purple[700],cursor:generatingPlan?"default":"pointer",fontFamily:"inherit"}}>{generatingPlan?"提案中...":"✦ AIが提案"}</button>}
+            </div>
+            <Textarea value={entryForm.plan} onChange={v=>setEntryForm(f=>({...f,plan:v}))} rows={3} placeholder="今週の目標・計画（AIが提案することもできます）"/>
+          </div>
           <div><div style={{fontSize:12,color:C.teal[600],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div><Textarea value={entryForm.do_} onChange={v=>setEntryForm(f=>({...f,do_:v}))} rows={3} placeholder="実際に行ったこと"/></div>
           <div><div style={{fontSize:12,color:C.amber[700],fontWeight:600,marginBottom:4}}>🔍 Check（評価）</div><Textarea value={entryForm.check} onChange={v=>setEntryForm(f=>({...f,check:v}))} rows={3} placeholder="成果・課題・気づき"/></div>
           <div><div style={{fontSize:12,color:C.purple[600],fontWeight:600,marginBottom:4}}>🔄 Act（改善）</div><Textarea value={entryForm.act} onChange={v=>setEntryForm(f=>({...f,act:v}))} rows={3} placeholder="次週への改善・アクション"/></div>
@@ -2073,6 +2119,26 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
             </Card>
             );
           })}
+        </div>
+      )}
+
+      {/* 研修後報告（LINEからの返信）*/}
+      {afterReports.length>0&&(
+        <div style={{marginTop:20}}>
+          <div style={{fontSize:13,fontWeight:500,color:C.gray[800],marginBottom:8}}>📝 研修後報告（LINEからの返信）</div>
+          {afterReports.map(r=>(
+            <Card key={r.id} style={{borderLeft:`3px solid ${C.teal[400]}`}}>
+              <div style={{fontSize:11,color:C.gray[400],marginBottom:6}}>{r.date}</div>
+              <div style={{fontSize:13,color:C.gray[800],lineHeight:1.7,padding:"8px 10px",background:C.gray[50],borderRadius:6,marginBottom:r.feedback?8:0}}>{r.content}</div>
+              {r.feedback&&(
+                <div style={{position:"relative",paddingLeft:14}}>
+                  <div style={{position:"absolute",left:3,top:4,bottom:4,width:1,background:C.teal[200]}}/>
+                  <div style={{fontSize:11,fontWeight:600,color:C.teal[700],marginBottom:4}}>AIフィードバック</div>
+                  <div style={{fontSize:12,color:C.gray[800],lineHeight:1.7,whiteSpace:"pre-wrap"}}>{r.feedback}</div>
+                </div>
+              )}
+            </Card>
+          ))}
         </div>
       )}
     </div>
