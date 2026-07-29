@@ -726,10 +726,12 @@ ${content}
       // ── 入店報告 ──────────────────────────────────────────
       if (text === "入店報告" || text.startsWith("入店：") || text.startsWith("入店:")) {
         await db.collection("lineUsersPending").doc(lineUserId).set({
-          type: "awaiting_checkin_store",
+          type: "awaiting_checkin_all",
           updatedAt: new Date(),
         });
-        await replyMessage(replyToken, "入店する店舗名を教えてください。\n\n例：北花田店");
+        await replyMessage(replyToken,
+          "以下の形式で入店情報を送ってください。\n\n代理店名・店舗名・キャリア\n\n例：〇〇エージェント・北花田店・ワイモバイル\n\n代理店がない場合：なし・北花田店・docomo"
+        );
         continue;
       }
 
@@ -807,7 +809,55 @@ ${content}
         continue;
       }
 
-      // ── pending：入店フロー（店舗→代理店→キャリア）──────
+      // ── pending：入店フロー（一括入力）──────────────────
+      if (pendingType2 === "awaiting_checkin_all") {
+        // 「代理店・店舗・キャリア」を「・」「/」「,」「、」で分割
+        const parts2 = text.split(/[・/,、\n]/).map(s=>s.trim()).filter(Boolean);
+        let agency = "", storeName = "", carrierId = "other";
+
+        if (parts2.length >= 3) {
+          agency = parts2[0] === "なし" ? "" : parts2[0];
+          storeName = parts2[1];
+          const carrierText = parts2[2].toLowerCase();
+          if (carrierText.includes("docomo")||carrierText.includes("ドコモ")) carrierId = "docomo";
+          else if (carrierText.includes("ahamo")||carrierText.includes("アハモ")) carrierId = "ahamo";
+          else if (carrierText.includes("au")) carrierId = "au";
+          else if (carrierText.includes("softbank")||carrierText.includes("ソフトバンク")||carrierText.includes("sb")) carrierId = "softbank";
+          else if (carrierText.includes("ymobile")||carrierText.includes("ワイモバイル")||carrierText.includes("ワイモバ")) carrierId = "ymobile";
+          else if (carrierText.includes("uq")) carrierId = "uq";
+        } else if (parts2.length === 2) {
+          storeName = parts2[0];
+          const carrierText = parts2[1].toLowerCase();
+          if (carrierText.includes("docomo")||carrierText.includes("ドコモ")) carrierId = "docomo";
+          else if (carrierText.includes("ahamo")||carrierText.includes("アハモ")) carrierId = "ahamo";
+          else if (carrierText.includes("au")) carrierId = "au";
+          else if (carrierText.includes("softbank")||carrierText.includes("ソフトバンク")||carrierText.includes("sb")) carrierId = "softbank";
+          else if (carrierText.includes("ymobile")||carrierText.includes("ワイモバイル")||carrierText.includes("ワイモバ")) carrierId = "ymobile";
+          else if (carrierText.includes("uq")) carrierId = "uq";
+        } else {
+          await replyMessage(replyToken, "フォーマットが正しくありません。\n\n代理店名・店舗名・キャリア\n\n例：〇〇エージェント・北花田店・ワイモバイル");
+          continue;
+        }
+
+        await db.collection("lineUsersPending").doc(lineUserId).delete();
+        const today = todayStr();
+        const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
+        await ref.set({
+          uid, displayName, date:today,
+          storeName, agency,
+          defaultCarrierId: carrierId,
+          entries:[], peripheralTotal:0,
+          updatedAt:new Date(), createdAt:new Date()
+        }, {merge:true});
+
+        const carrierLabel = CARRIER_LABELS[carrierId]||carrierId;
+        await replyMessage(replyToken,
+          `✅ 入店登録完了！\n\n🏪 店舗：${storeName}\n🏢 代理店：${agency||"なし"}\n📱 キャリア：${carrierLabel}\n\n以降は件数だけ送ってください！\n\n例：新規3 MNP1\n例：機変2 クレカ1`
+        );
+        continue;
+      }
+
+      // 旧フロー対応（後方互換）
       if (pendingType2 === "awaiting_checkin_store") {
         const storeName = text.trim();
         await db.collection("lineUsersPending").doc(lineUserId).set({
