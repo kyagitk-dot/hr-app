@@ -68,12 +68,14 @@ async function parseWithAI(text: string): Promise<any | null> {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
-    if (!parsed.carrierId || parsed.carrierId === "null") return null;
     // entryから0の項目を除去
     const entry: any = {};
     for (const [k, v] of Object.entries(parsed.entry || {})) {
       if ((v as number) > 0) entry[k] = v;
     }
+    // クレカ曖昧の場合はキャリアなしでも返す
+    const hasAmbiguous = (entry.creditCardAmbiguous || 0) > 0;
+    if (!hasAmbiguous && (!parsed.carrierId || parsed.carrierId === "null")) return null;
     return {
       carrierId: parsed.carrierId,
       storeName: parsed.storeName || "",
@@ -876,6 +878,24 @@ ${content}
         await replyMessage(
           replyToken,
           "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
+        );
+        continue;
+      }
+
+      // ── クレカの種別が不明な場合は先に聞き返す ──────────
+      const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
+      if (ambiguousCountEarly && ambiguousCountEarly > 0) {
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_card_type",
+          pendingText: text,
+          ambiguousCount: ambiguousCountEarly,
+          parsedData: parsed,
+          date,
+          updatedAt: new Date(),
+        });
+        await replyMessage(
+          replyToken,
+          `クレカ${ambiguousCountEarly}件を受け取りました！\nノーマルですか？ゴールドですか？\n\n「ノーマル」または「ゴールド」と返信してください。`
         );
         continue;
       }
