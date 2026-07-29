@@ -1732,13 +1732,14 @@ const TrainingPDCAPage = ({users}) => {
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [entryTargetId, setEntryTargetId] = useState(null);
   const [entryForm, setEntryForm] = useState({date:new Date().toLocaleDateString("sv-SE"),plan:"",do_:"",check:"",act:""});
+  const [prevEntryData, setPrevEntryData] = useState(null);
   const [savingEntry, setSavingEntry] = useState(false);
 
   const openAddEntry = (r)=>{
     setEntryTargetId(r.id);
-    // 直前のエントリーのActを次のPlanとして引き継ぐ
     const entries = r.entries||[];
     const lastEntry = entries[entries.length-1];
+    setPrevEntryData(lastEntry||null);
     setEntryForm({date:new Date().toLocaleDateString("sv-SE"),plan:lastEntry?.act||"",do_:"",check:"",act:""});
     setShowEntryForm(true);
   };
@@ -1855,7 +1856,20 @@ Plan:${r.plan||"未入力"} / Do:${r.do_||"未入力"} / Check:${r.check||"未�
 
       {showEntryForm&&entryTargetId&&<Modal title="今週の内容を追加" onClose={()=>setShowEntryForm(false)}>
         <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          <div style={{fontSize:12,color:C.purple[800],padding:"8px 10px",background:C.purple[50],borderRadius:6}}>前回のActが次のPlanに引き継がれています。確認・修正してください。</div>
+          {prevEntryData&&(
+            <div style={{background:C.gray[50],border:`0.5px solid ${C.gray[100]}`,borderRadius:8,padding:"10px 12px"}}>
+              <div style={{fontSize:11,fontWeight:600,color:C.gray[500],marginBottom:8}}>📋 前週の内容（参照用）</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {[["Plan",prevEntryData.plan,C.blue],["Do",prevEntryData.do_,C.teal],["Check",prevEntryData.check,C.amber],["Act",prevEntryData.act,C.purple]].map(([label,val,color])=>(
+                  <div key={label} style={{background:color[50],borderRadius:6,padding:"6px 8px"}}>
+                    <div style={{fontSize:10,fontWeight:600,color:color[800],marginBottom:2}}>{label}</div>
+                    <div style={{fontSize:11,color:C.gray[700],lineHeight:1.5}}>{val||<span style={{color:C.gray[300]}}>未入力</span>}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{fontSize:12,color:C.purple[800],padding:"6px 10px",background:C.purple[50],borderRadius:6}}>⬆️ 前週のActが今週のPlanに引き継がれています</div>
           <div><div style={{fontSize:12,color:C.gray[400],marginBottom:4}}>日付</div><input type="date" value={entryForm.date} onChange={e=>setEntryForm(f=>({...f,date:e.target.value}))} style={{width:"100%",height:36,padding:"0 8px",border:`0.5px solid ${C.gray[200]}`,borderRadius:8,fontSize:13,fontFamily:"inherit"}}/></div>
           <div><div style={{fontSize:12,color:C.blue[600],fontWeight:600,marginBottom:4}}>📋 Plan（計画）*</div><Textarea value={entryForm.plan} onChange={v=>setEntryForm(f=>({...f,plan:v}))} rows={3} placeholder="今週の目標・計画"/></div>
           <div><div style={{fontSize:12,color:C.teal[600],fontWeight:600,marginBottom:4}}>✅ Do（実行）</div><Textarea value={entryForm.do_} onChange={v=>setEntryForm(f=>({...f,do_:v}))} rows={3} placeholder="実際に行ったこと"/></div>
