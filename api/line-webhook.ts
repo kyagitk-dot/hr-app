@@ -47,6 +47,7 @@ async function parseWithAI(text: string): Promise<any | null> {
 
 キャリア対応：docomo/ドコモ→docomo、ahamo/アハモ→ahamo、au/AU→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、その他格安SIM→other
 項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカ/ノーマル/CC→creditCardNormal、ゴールド→creditCardGold、電気/ガス→energy、周辺機器/アクセサリ→peripheralAmount
+重要：「クレカ」「カード」「クレジット」など種別が不明な場合は "creditCardAmbiguous" フィールドに件数を入れてください。ノーマル・ゴールドが明示されている場合のみ各フィールドに入れてください。
 件数が不明な項目は0にしてください。carrierId が判断できない場合は null にしてください。`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -738,6 +739,38 @@ ${content}
       const pendingSnap2 = await db.collection("lineUsersPending").doc(lineUserId).get();
       const pendingType2 = pendingSnap2.exists ? pendingSnap2.data()!.type : null;
 
+      // ── クレカ種別待ち ────────────────────────────────────
+      if (pendingType2 === "awaiting_card_type") {
+        const pendingData = pendingSnap2.data()!;
+        const isNormal = text.includes("ノーマル") || text.includes("n") || text === "N" || text === "n" || text.includes("普通") || text.includes("通常");
+        const isGold = text.includes("ゴールド") || text.includes("gold") || text === "G" || text === "g";
+        if (isNormal || isGold) {
+          const cardKey = isGold ? "creditCardGold" : "creditCardNormal";
+          const cardLabel = isGold ? "ゴールド" : "ノーマル";
+          const count = pendingData.ambiguousCount || 1;
+          const parsed = pendingData.parsedData;
+          const targetDate = pendingData.date || todayStr();
+          // エントリーを修正して保存
+          const ref = db.collection("salesReports").doc(uid).collection("daily").doc(targetDate);
+          const snap2 = await ref.get();
+          const existing2 = snap2.exists ? snap2.data()! : {entries:[], peripheralTotal:0};
+          const entries2: any[] = existing2.entries || [];
+          const safeCarrierId2 = parsed.carrierId || "other";
+          const idx2 = entries2.findIndex((e:any)=>e.carrierId===safeCarrierId2);
+          const emptyEntry2 = (carrierId:string)=>({carrierId,newContract:0,deviceChange:0,mnpIn:0,portIn:0,netLine:0,creditCardNormal:0,creditCardGold:0,energy:0});
+          const newEntry = {...(idx2>=0?entries2[idx2]:emptyEntry2(safeCarrierId2)),[cardKey]:count,...(parsed.entry||{})};
+          delete (newEntry as any).creditCardAmbiguous;
+          if(idx2>=0) entries2[idx2]=newEntry; else entries2.push(newEntry);
+          await ref.set({uid,displayName,date:targetDate,entries:entries2,peripheralTotal:existing2.peripheralTotal||0,agency:parsed.agency||existing2.agency||"",storeName:parsed.storeName||existing2.storeName||"",updatedAt:new Date(),createdAt:snap2.exists?existing2.createdAt:new Date()},{merge:true});
+          await db.collection("lineUsersPending").doc(lineUserId).delete();
+          const carrierLabel = CARRIER_LABELS[safeCarrierId2]||safeCarrierId2;
+          await replyMessage(replyToken, `ありがとうございます！\n${targetDate===todayStr()?"":"【"+targetDate+"の報告】\n"}記録しました！\n${carrierLabel}\nクレカ（${cardLabel}）：${count}件\nアプリでも確認できます。`);
+        } else {
+          await replyMessage(replyToken, "「ノーマル」または「ゴールド」と返信してください。");
+        }
+        continue;
+      }
+
       if (pendingType2 === "awaiting_date") {
         let targetDate = todayStr();
         if (text === "今日" || text === "本日") {
@@ -920,6 +953,26 @@ ${content}
 
       const existing = snap.exists ? snap.data()! : { entries: [], peripheralTotal: 0 };
       const entries: any[] = existing.entries || [];
+
+      // ── クレカの種別が不明な場合は聞き返す ──────────────
+      const ambiguousCount = (parsed.entry as any)?.creditCardAmbiguous;
+      if (ambiguousCount && ambiguousCount > 0) {
+        // pending状態に保存してから聞き返す
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_card_type",
+          pendingText: text,
+          ambiguousCount,
+          parsedData: parsed,
+          date,
+          updatedAt: new Date(),
+        });
+        await replyMessage(
+          replyToken,
+          `クレカ${ambiguousCount}件を受け取りました！\nノーマルですか？ゴールドですか？\n\n「ノーマル」または「ゴールド」と返信してください。`
+        );
+        continue;
+      }
+
       const safeCarrierId = parsed.carrierId || "other";
       const idx = entries.findIndex((e) => e.carrierId === safeCarrierId);
 
