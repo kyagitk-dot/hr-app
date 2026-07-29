@@ -46,7 +46,7 @@ async function parseWithAI(text: string): Promise<any | null> {
 }
 
 キャリア対応：docomo/ドコモ→docomo、ahamo/アハモ→ahamo、au/AU→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、その他格安SIM→other
-項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカ/ノーマル/CC→creditCardNormal、ゴールド→creditCardGold、電気/ガス→energy、周辺機器/アクセサリ→peripheralAmount
+項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカノーマル/N/ノーマル→creditCardNormal、ゴールド→creditCardGold、電気/ガス→energy、周辺機器/アクセサリ→peripheralAmount
 重要：「クレカ」「カード」「クレジット」など種別が不明な場合は "creditCardAmbiguous" フィールドに件数を入れてください。ノーマル・ゴールドが明示されている場合のみ各フィールドに入れてください。
 件数が不明な項目は0にしてください。carrierId が判断できない場合は null にしてください。`;
 
@@ -147,17 +147,17 @@ const FIELD_KEYWORDS: Record<string, string> = {
   bb: "netLine",
   ブロードバンド: "netLine",
   フレッツ: "netLine",
-  paypayカード: "creditCardNormal",
+  paypayカード: "creditCardAmbiguous",
   ペイペイカード: "creditCardNormal",
   ぺいぺいかーど: "creditCardNormal",
   ペイカ: "creditCardNormal",
   ぺいか: "creditCardNormal",
   クレジットカード: "creditCardNormal",
-  クレジット: "creditCardNormal",
-  クレカ: "creditCardNormal",
+  クレジット: "creditCardAmbiguous",
+  クレカ: "creditCardAmbiguous",
   クレカノーマル: "creditCardNormal",
   クレカn: "creditCardNormal",
-  cc: "creditCardNormal",
+  cc: "creditCardAmbiguous",
   カード: "creditCardNormal",
   クレカゴールド: "creditCardGold",
   ゴールドカード: "creditCardGold",
