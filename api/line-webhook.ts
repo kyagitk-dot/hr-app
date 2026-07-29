@@ -1023,7 +1023,25 @@ ${content}
         continue;
       }
 
-      // キャリアが不明な場合は登録せず聞き返す
+      // ★★★ 修正箇所：当日分の既存データを先に取得し、
+      //     入店報告で登録済みのキャリア／店舗があれば引き継ぐ ★★★
+      const refEarly = db.collection("salesReports").doc(uid).collection("daily").doc(date);
+      const snapEarly = await refEarly.get();
+      const existingEarly = snapEarly.exists ? snapEarly.data()! : null;
+
+      if (parsed.noCarrier && existingEarly) {
+        const fallbackCarrierId =
+          existingEarly.defaultCarrierId ||
+          (existingEarly.entries?.length > 0
+            ? existingEarly.entries[existingEarly.entries.length - 1].carrierId
+            : null);
+        if (fallbackCarrierId) {
+          parsed.carrierId = fallbackCarrierId;
+          parsed.noCarrier = false;
+        }
+      }
+
+      // キャリアが不明な場合は登録せず聞き返す（入店報告での登録が無い場合のみ）
       if (parsed.noCarrier) {
         const itemDesc = Object.entries(parsed.entry)
           .map(([k, v]) => `${FIELD_LABELS[k]||k}${v}件`)
@@ -1031,15 +1049,6 @@ ${content}
         await replyMessage(
           replyToken,
           `「${itemDesc}」を受け取りましたが、キャリア名が含まれていません。\n\nどのキャリアですか？キャリア名を付けて送り直してください。\n\n例：docomo ${text}`
-        );
-        continue;
-      }
-
-      // キャリアはわかるが項目が読み取れなかった場合
-      if (parsed.carrierId && Object.keys(parsed.entry).length === 0 && parsed.peripheralAmount === 0) {
-        await replyMessage(
-          replyToken,
-          `「${CARRIER_LABELS[parsed.carrierId]||parsed.carrierId}」は認識できましたが、件数や項目が読み取れませんでした。\n\n以下のように送ってください。\n例：〇〇店でdocomo 新規3件 MNP1件`
         );
         continue;
       }
