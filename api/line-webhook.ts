@@ -723,7 +723,51 @@ ${content}
         continue;
       }
 
-      // ── リッチメニュー：追加報告 ─────────────────────────
+      // ── 入店報告 ──────────────────────────────────────────
+      if (text === "入店報告" || text.startsWith("入店：") || text.startsWith("入店:")) {
+        const storeName = text.replace(/^入店[：:]\s*/, "").trim();
+        if (text === "入店報告" || !storeName) {
+          // pending状態で店舗名待ち
+          await db.collection("lineUsersPending").doc(lineUserId).set({
+            type: "awaiting_checkin",
+            updatedAt: new Date(),
+          });
+          await replyMessage(replyToken, "入店する店舗名を送ってください。\n\n例：北花田店");
+        } else {
+          // 店舗名を今日の報告に設定
+          const today = todayStr();
+          const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
+          await ref.set({uid, displayName, date:today, storeName, agency:"", entries:[], peripheralTotal:0, updatedAt:new Date(), createdAt:new Date()}, {merge:true});
+          await replyMessage(replyToken, `✅ ${storeName}に入店しました！\n本日の報告は店舗名が自動で入ります。\n\n例：docomo新規3件 MNP1件`);
+        }
+        continue;
+      }
+
+      // ── 退店報告 ──────────────────────────────────────────
+      if (text === "退店報告") {
+        const today = todayStr();
+        const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
+        const snap0 = await ref.get();
+        if (snap0.exists) {
+          const data = snap0.data()!;
+          const total = (data.entries||[]).reduce((s:number, e:any)=>s+totalOfEntry(e), 0);
+          const storeName = data.storeName || "";
+          const parts = (data.entries||[])
+            .filter((e:any)=>totalOfEntry(e)>0)
+            .map((e:any)=>`${CARRIER_LABELS[e.carrierId]||e.carrierId}：${totalOfEntry(e)}件`)
+            .join("\n");
+          await replyMessage(replyToken,
+            `🏁 ${storeName ? storeName+"、" : ""}お疲れ様でした！\n\n【本日の実績】\n${parts||"まだ報告なし"}\n\n合計：${total}件${data.peripheralTotal?"\n周辺機器："+data.peripheralTotal.toLocaleString()+"円":""}`
+          );
+        } else {
+          await replyMessage(replyToken, "🏁 お疲れ様でした！\n本日の報告はまだありません。");
+        }
+        continue;
+      }
+
+      // ── pending：入店店舗名待ち ───────────────────────────
+
+
       if (text === "追加報告") {
         // pending状態をセット（日付待ち）
         await db.collection("lineUsersPending").doc(lineUserId).set({
@@ -770,6 +814,17 @@ ${content}
         } else {
           await replyMessage(replyToken, "「ノーマル」または「ゴールド」と返信してください。");
         }
+        continue;
+      }
+
+      // ── pending：入店店舗名待ち ───────────────────────────
+      if (pendingType2 === "awaiting_checkin") {
+        const storeName = text.trim();
+        await db.collection("lineUsersPending").doc(lineUserId).delete();
+        const today = todayStr();
+        const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
+        await ref.set({uid, displayName, date:today, storeName, agency:"", entries:[], peripheralTotal:0, updatedAt:new Date(), createdAt:new Date()}, {merge:true});
+        await replyMessage(replyToken, `✅ ${storeName}に入店しました！\n本日の報告は店舗名が自動で入ります。\n\n例：docomo新規3件 MNP1件`);
         continue;
       }
 
