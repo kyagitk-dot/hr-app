@@ -885,6 +885,15 @@ ${content}
       // ── クレカの種別が不明な場合は先に聞き返す ──────────
       const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
       if (ambiguousCountEarly && ambiguousCountEarly > 0) {
+        // キャリア未指定なら今日の直前キャリアを引き継ぐ
+        if (!parsed.carrierId && snap.exists) {
+          const existingData = snap.data()!;
+          if (existingData.entries?.length > 0) {
+            parsed.carrierId = existingData.entries[existingData.entries.length - 1].carrierId;
+          }
+          if (existingData.storeName) parsed.storeName = existingData.storeName;
+          if (existingData.agency) parsed.agency = existingData.agency;
+        }
         await db.collection("lineUsersPending").doc(lineUserId).set({
           type: "awaiting_card_type",
           pendingText: text,
@@ -945,6 +954,10 @@ ${content}
           if (existingData.storeName || existingData.agency) {
             parsed.storeName = existingData.storeName || "";
             parsed.agency = existingData.agency || "";
+            // キャリアも未指定なら直前のキャリアを引き継ぐ
+            if (!parsed.carrierId && existingData.entries?.length > 0) {
+              parsed.carrierId = existingData.entries[existingData.entries.length - 1].carrierId;
+            }
           } else {
             // 今日のデータはあるが店舗名がない→聞き返す
             const carrierLabel = CARRIER_LABELS[parsed.carrierId||""] || parsed.carrierId || "";
