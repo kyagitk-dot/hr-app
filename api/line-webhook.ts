@@ -882,33 +882,6 @@ ${content}
         continue;
       }
 
-      // ── クレカの種別が不明な場合は先に聞き返す ──────────
-      const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
-      if (ambiguousCountEarly && ambiguousCountEarly > 0) {
-        // キャリア未指定なら今日の直前キャリアを引き継ぐ
-        if (!parsed.carrierId && snap.exists) {
-          const existingData = snap.data()!;
-          if (existingData.entries?.length > 0) {
-            parsed.carrierId = existingData.entries[existingData.entries.length - 1].carrierId;
-          }
-          if (existingData.storeName) parsed.storeName = existingData.storeName;
-          if (existingData.agency) parsed.agency = existingData.agency;
-        }
-        await db.collection("lineUsersPending").doc(lineUserId).set({
-          type: "awaiting_card_type",
-          pendingText: text,
-          ambiguousCount: ambiguousCountEarly,
-          parsedData: parsed,
-          date,
-          updatedAt: new Date(),
-        });
-        await replyMessage(
-          replyToken,
-          `クレカ${ambiguousCountEarly}件を受け取りました！\nノーマルですか？ゴールドですか？\n\n「ノーマル」または「ゴールド」と返信してください。`
-        );
-        continue;
-      }
-
       // キャリアが不明な場合は登録せず聞き返す
       if (parsed.noCarrier) {
         const itemDesc = Object.entries(parsed.entry)
@@ -945,6 +918,33 @@ ${content}
         .collection("daily")
         .doc(date);
       const snap = await ref.get();
+
+      // ── クレカの種別が不明な場合は聞き返す ──────────────
+      const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
+      if (ambiguousCountEarly && ambiguousCountEarly > 0) {
+        // キャリア未指定なら今日の直前キャリアを引き継ぐ
+        if (!parsed.carrierId && snap.exists) {
+          const existingData = snap.data()!;
+          if (existingData.entries?.length > 0) {
+            parsed.carrierId = existingData.entries[existingData.entries.length - 1].carrierId;
+          }
+          if (existingData.storeName) parsed.storeName = existingData.storeName;
+          if (existingData.agency) parsed.agency = existingData.agency;
+        }
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_card_type",
+          pendingText: text,
+          ambiguousCount: ambiguousCountEarly,
+          parsedData: parsed,
+          date,
+          updatedAt: new Date(),
+        });
+        await replyMessage(
+          replyToken,
+          `クレカ${ambiguousCountEarly}件を受け取りました！\nノーマルですか？ゴールドですか？\n\n「ノーマル」または「ゴールド」と返信してください。`
+        );
+        continue;
+      }
 
       // 代理店名・店舗名がない場合の処理
       if (parsed.noStore) {
