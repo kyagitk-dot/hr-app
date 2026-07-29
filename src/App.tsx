@@ -821,6 +821,21 @@ const SalesMemberStats = ({uid, allReports}) => {
   });
   const dailyTotals = filtered.map(r=>({date:r.date.slice(5),total:(r.entries||[]).reduce((s,e)=>s+salesTotal(e),0)})).sort((a,b)=>a.date.localeCompare(b.date));
   const monthTotal = filtered.reduce((s,r)=>s+(r.entries||[]).reduce((s2,e)=>s2+salesTotal(e),0),0);
+
+  // ── 内訳：キャリア別 ──────────────────────────────────────
+  const carrierBreakdown = CARRIERS_SALES.map(c=>{
+    const rows = filtered.flatMap(r=>(r.entries||[]).filter(e=>e.carrierId===c.id));
+    return {id:c.id, label:c.label, total: rows.reduce((s,e)=>s+salesTotal(e),0), color: CARRIER_COLORS_S[c.id]};
+  }).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+  const maxCarrier = carrierBreakdown[0]?.total || 1;
+
+  // ── 内訳：項目別 ──────────────────────────────────────────
+  const itemBreakdown = SALES_FIELDS.map(f=>{
+    const total = filtered.reduce((s,r)=>s+(r.entries||[]).reduce((s2,e)=>s2+(e[f.key]||0),0),0);
+    return {key:f.key, label:f.label, total};
+  }).filter(f=>f.total>0);
+  const peripheralBreakdownTotal = filtered.reduce((s,r)=>s+(r.peripheralTotal||0),0);
+
   const ranking = Object.entries(allReports.reduce((acc,r)=>{
     const d=new Date(r.date);if(d.getFullYear()!==now.getFullYear()||d.getMonth()!==now.getMonth())return acc;
     if(!acc[r.uid])acc[r.uid]={uid:r.uid,name:r.displayName,total:0};
@@ -840,6 +855,41 @@ const SalesMemberStats = ({uid, allReports}) => {
         <div style={{background:C.teal[50],borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:C.teal[800],marginBottom:3}}>稼働日数</div><div style={{fontSize:24,fontWeight:600,color:C.teal[800]}}>{filtered.length}日</div></div>
         <div style={{background:C.amber[50],borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:C.amber[800],marginBottom:3}}>今月順位</div><div style={{fontSize:24,fontWeight:600,color:C.amber[800]}}>{myRank>0?`${myRank}位`:"-"}</div></div>
       </div>
+      <Card>
+        <CardTitle>キャリア別内訳</CardTitle>
+        {carrierBreakdown.length===0?(
+          <div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>
+        ):(
+          carrierBreakdown.map(c=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:80,fontSize:12,color:C.gray[800],fontWeight:500,flexShrink:0}}>{c.label}</div>
+              <div style={{flex:1,height:8,background:C.gray[100],borderRadius:4}}><div style={{height:"100%",width:`${(c.total/maxCarrier)*100}%`,background:c.color,borderRadius:4}}/></div>
+              <div style={{fontSize:14,fontWeight:600,color:C.gray[800],minWidth:36,textAlign:"right"}}>{c.total}</div>
+            </div>
+          ))
+        )}
+      </Card>
+      <Card>
+        <CardTitle>項目別内訳</CardTitle>
+        {itemBreakdown.length===0&&peripheralBreakdownTotal===0?(
+          <div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+            {itemBreakdown.map(f=>(
+              <div key={f.key} style={{background:C.gray[50],borderRadius:8,padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:C.gray[400],marginBottom:2}}>{f.label}</div>
+                <div style={{fontSize:18,fontWeight:600,color:C.gray[800]}}>{f.total}</div>
+              </div>
+            ))}
+            {peripheralBreakdownTotal>0&&(
+              <div style={{background:C.purple[50],borderRadius:8,padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:C.purple[600],marginBottom:2}}>周辺機器</div>
+                <div style={{fontSize:18,fontWeight:600,color:C.purple[800]}}>{peripheralBreakdownTotal.toLocaleString()}円</div>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
       <Card>
         <CardTitle>日別件数</CardTitle>
         {dailyTotals.length===0?(
