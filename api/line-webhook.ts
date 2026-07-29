@@ -725,21 +725,11 @@ ${content}
 
       // ── 入店報告 ──────────────────────────────────────────
       if (text === "入店報告" || text.startsWith("入店：") || text.startsWith("入店:")) {
-        const storeName = text.replace(/^入店[：:]\s*/, "").trim();
-        if (text === "入店報告" || !storeName) {
-          // pending状態で店舗名待ち
-          await db.collection("lineUsersPending").doc(lineUserId).set({
-            type: "awaiting_checkin",
-            updatedAt: new Date(),
-          });
-          await replyMessage(replyToken, "入店する店舗名を送ってください。\n\n例：北花田店");
-        } else {
-          // 店舗名を今日の報告に設定
-          const today = todayStr();
-          const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
-          await ref.set({uid, displayName, date:today, storeName, agency:"", entries:[], peripheralTotal:0, updatedAt:new Date(), createdAt:new Date()}, {merge:true});
-          await replyMessage(replyToken, `✅ ${storeName}に入店しました！\n本日の報告は店舗名が自動で入ります。\n\n例：docomo新規3件 MNP1件`);
-        }
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_checkin_store",
+          updatedAt: new Date(),
+        });
+        await replyMessage(replyToken, "入店する店舗名を教えてください。\n\n例：北花田店");
         continue;
       }
 
@@ -817,18 +807,64 @@ ${content}
         continue;
       }
 
-      // ── pending：入店店舗名待ち ───────────────────────────
-      if (pendingType2 === "awaiting_checkin") {
+      // ── pending：入店フロー（店舗→代理店→キャリア）──────
+      if (pendingType2 === "awaiting_checkin_store") {
         const storeName = text.trim();
-        await db.collection("lineUsersPending").doc(lineUserId).delete();
-        const today = todayStr();
-        const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
-        await ref.set({uid, displayName, date:today, storeName, agency:"", entries:[], peripheralTotal:0, updatedAt:new Date(), createdAt:new Date()}, {merge:true});
-        await replyMessage(replyToken, `✅ ${storeName}に入店しました！\n本日の報告は店舗名が自動で入ります。\n\n例：docomo新規3件 MNP1件`);
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_checkin_agency",
+          storeName,
+          updatedAt: new Date(),
+        });
+        await replyMessage(replyToken, `店舗名：${storeName}\n\n次に代理店名を教えてください。\n\n例：〇〇エージェント\n（なければ「なし」と送ってください）`);
         continue;
       }
 
-      if (pendingType2 === "awaiting_date") {
+      if (pendingType2 === "awaiting_checkin_agency") {
+        const agency = text === "なし" ? "" : text.trim();
+        const storeName = pendingSnap2.data()!.storeName || "";
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_checkin_carrier",
+          storeName,
+          agency,
+          updatedAt: new Date(),
+        });
+        await replyMessage(replyToken, `代理店：${agency||"なし"}\n\n次にメインキャリアを教えてください。\n\ndocomo／ahamo／au／SoftBank／ワイモバイル／UQ／その他`);
+        continue;
+      }
+
+      if (pendingType2 === "awaiting_checkin_carrier") {
+        const lower2 = text.toLowerCase();
+        let carrierId = "other";
+        if (lower2.includes("docomo")||lower2.includes("ドコモ")) carrierId = "docomo";
+        else if (lower2.includes("ahamo")||lower2.includes("アハモ")) carrierId = "ahamo";
+        else if (lower2.includes("au")) carrierId = "au";
+        else if (lower2.includes("softbank")||lower2.includes("ソフトバンク")||lower2.includes("sb")) carrierId = "softbank";
+        else if (lower2.includes("ymobile")||lower2.includes("ワイモバイル")||lower2.includes("ワイモバ")) carrierId = "ymobile";
+        else if (lower2.includes("uq")) carrierId = "uq";
+
+        const storeName = pendingSnap2.data()!.storeName || "";
+        const agency = pendingSnap2.data()!.agency || "";
+        await db.collection("lineUsersPending").doc(lineUserId).delete();
+
+        // 今日の報告に店舗・代理店・デフォルトキャリアを設定
+        const today = todayStr();
+        const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
+        await ref.set({
+          uid, displayName, date:today,
+          storeName, agency,
+          defaultCarrierId: carrierId,
+          entries:[], peripheralTotal:0,
+          updatedAt:new Date(), createdAt:new Date()
+        }, {merge:true});
+
+        const carrierLabel = CARRIER_LABELS[carrierId]||carrierId;
+        await replyMessage(replyToken,
+          `✅ 入店登録完了！\n\n🏪 店舗：${storeName}\n🏢 代理店：${agency||"なし"}\n📱 キャリア：${carrierLabel}\n\n以降は件数だけ送ってください！\n\n例：新規3 MNP1\n例：機変2 クレカ1`
+        );
+        continue;
+      }
+
+      if (pendingType2 === "awaiting_checkin") {
         let targetDate = todayStr();
         if (text === "今日" || text === "本日") {
           targetDate = todayStr();
@@ -1061,7 +1097,7 @@ ${content}
         continue;
       }
 
-      const safeCarrierId = parsed.carrierId || "other";
+      const safeCarrierId = parsed.carrierId || (snap.exists ? snap.data()!.defaultCarrierId : null) || "other";
       const idx = entries.findIndex((e) => e.carrierId === safeCarrierId);
 
       const emptyEntry = (carrierId: string) => ({
