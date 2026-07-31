@@ -225,9 +225,9 @@ const BottomNav = ({nav,page,setPage}) => {
   return (
     <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
       {displayNav.map(n=>(
-        <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 2px 10px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:page===n.id?C.purple[600]:C.gray[400],minWidth:0}}>
-          <NavIcon name={n.icon} size={18}/>
-          <span style={{fontSize:9,fontWeight:page===n.id?500:400,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{n.shortLabel||n.label}</span>
+        <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"12px 2px 14px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,color:page===n.id?C.purple[600]:C.gray[400],minWidth:0}}>
+          <NavIcon name={n.icon} size={26}/>
+          <span style={{fontSize:12,fontWeight:page===n.id?600:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{n.shortLabel||n.label}</span>
         </button>
       ))}
     </div>
