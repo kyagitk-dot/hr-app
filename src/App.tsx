@@ -2446,6 +2446,20 @@ export default function App() {
   const [settings,setSettings] = useState({departments:DEPARTMENTS_DEFAULT,gradeDefs:GRADE_DEFS_DEFAULT,periods:PERIODS_DEFAULT});
   const [selectedUserId,setSelectedUserId] = useState(null);
 
+  // スマホ（主にiOS Safari）は入力欄のfont-sizeが16px未満だとタップ時に自動でズームしてしまう。
+  // 全ての input/select/textarea に対して、狭い画面幅の時だけ16pxを強制してズームを防ぐ。
+  useEffect(()=>{
+    const style = document.createElement("style");
+    style.setAttribute("data-stella-no-zoom", "true");
+    style.innerHTML = `
+      @media (max-width: 640px) {
+        input, select, textarea { font-size: 16px !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  },[]);
+
   useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async user => {
       if(user){
