@@ -356,6 +356,8 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
   const done = usersWithScore.filter(u=>u.status==="done").length;
   const scored = usersWithScore.filter(u=>u.rank);
   const avgScore = scored.length?Math.round(scored.reduce((a,u)=>a+u.managerScore,0)/scored.length):null;
+  const [sendingReminder,setSendingReminder] = useState(false);
+  const [reminderResult,setReminderResult] = useState(null);
 
   // ── 本日の入店状況（ホーム画面ですぐ確認できるように）───────
   const todayCheckins = users.map(u=>{
@@ -371,6 +373,39 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
     return a.name.localeCompare(b.name);
   });
   const checkedInCount = todayCheckins.filter(c=>c.checkedIn).length;
+
+  const sendCheckinReminder = async () => {
+    const targets = todayCheckins.filter(c=>!c.checkedIn);
+    if(targets.length===0) return;
+    if(!window.confirm(`未入店の${targets.length}名にLINEでリマインドを送信します。よろしいですか？`)) return;
+    setSendingReminder(true);
+    setReminderResult(null);
+    try {
+      const { getDocs, collection: fsCollection } = await import("firebase/firestore");
+      const lineSnap = await getDocs(fsCollection(db,"lineUsers"));
+      const uidToLineId = {};
+      lineSnap.forEach(d=>{ const data=d.data(); if(data.uid) uidToLineId[data.uid]=d.id; });
+      const lineIds = targets.map(t=>uidToLineId[t.id]).filter(Boolean);
+      if(lineIds.length===0){
+        setReminderResult({error:"LINE連携済みの未入店メンバーがいません。"});
+        return;
+      }
+      const res = await fetch("/api/send-line",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          lineUserIds: lineIds,
+          message: "まだ本日の入店報告が届いていません。\n\n「入店報告」と送って、店舗・キャリアの登録をお願いします🙏",
+        }),
+      });
+      const data = await res.json();
+      setReminderResult(data.error ? {error:data.error} : {success:`${data.successCount??lineIds.length}/${lineIds.length}名に送信しました`});
+    } catch {
+      setReminderResult({error:"送信に失敗しました。"});
+    } finally {
+      setSendingReminder(false);
+    }
+  };
 
   return (
     <div>
@@ -388,12 +423,16 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
               <div style={{fontSize:13,color:C.teal[800]}}>✓ 全員入店済みです</div>
             ):(
               <div>
-                <div style={{fontSize:11,color:C.gray[400],marginBottom:6}}>未入店（{users.length-checkedInCount}名）</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                  <div style={{fontSize:11,color:C.gray[400]}}>未入店（{users.length-checkedInCount}名）</div>
+                  <Btn small onClick={sendCheckinReminder} disabled={sendingReminder}>{sendingReminder?"送信中...":"📨 LINEでリマインド"}</Btn>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:reminderResult?8:0}}>
                   {todayCheckins.filter(c=>!c.checkedIn).map(c=>(
                     <span key={c.id} style={{fontSize:12,padding:"4px 10px",borderRadius:20,background:C.gray[50],color:C.gray[600]}}>{c.name}</span>
                   ))}
                 </div>
+                {reminderResult&&<div style={{fontSize:12,color:reminderResult.error?C.coral[800]:C.teal[800]}}>{reminderResult.error||reminderResult.success}</div>}
               </div>
             )}
           </div>
