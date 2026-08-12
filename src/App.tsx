@@ -350,14 +350,45 @@ const LoginPage = ({onLogin}) => {
   );
 };
 
-const Dashboard = ({users,evals,onNavigate,onSelectUser}) => {
+const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
   const isMobile = useIsMobile();
   const usersWithScore = users.map((u,i)=>{const e=evals[u.id]||{};const ms=calcScore(e.managerScores||{},u.grade);return {...u,idx:i,managerScore:ms,rank:e.managerScores&&Object.keys(e.managerScores).length?calcRank(ms):null,status:e.status||"none"};});
   const done = usersWithScore.filter(u=>u.status==="done").length;
   const scored = usersWithScore.filter(u=>u.rank);
   const avgScore = scored.length?Math.round(scored.reduce((a,u)=>a+u.managerScore,0)/scored.length):null;
+
+  // ── 本日の入店状況（ホーム画面ですぐ確認できるように）───────
+  const todayCheckins = users.map(u=>{
+    const report = (allReports||[]).find(r=>r.uid===u.id && r.date===todayStr());
+    return {
+      id: u.id,
+      name: u.name,
+      checkedIn: !!(report && (report.storeName || report.agency || report.defaultCarrierId)),
+      storeName: report?.storeName || "",
+    };
+  }).sort((a,b)=>{
+    if(a.checkedIn!==b.checkedIn) return a.checkedIn?-1:1;
+    return a.name.localeCompare(b.name);
+  });
+  const checkedInCount = todayCheckins.filter(c=>c.checkedIn).length;
+
   return (
     <div>
+      <Card style={{borderLeft:`3px solid ${checkedInCount===users.length&&users.length>0?C.teal[400]:C.amber[400]}`}}>
+        <CardTitle action={<Btn small onClick={()=>onNavigate("sales")}>販売実績を見る</Btn>}>本日の入店状況（{checkedInCount}/{users.length}名）</CardTitle>
+        {users.length===0?(
+          <div style={{textAlign:"center",padding:"10px",color:C.gray[400],fontSize:13}}>メンバーがいません</div>
+        ):(
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {todayCheckins.map(c=>(
+              <div key={c.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:20,background:c.checkedIn?C.teal[50]:C.coral[50],fontSize:12,color:c.checkedIn?C.teal[800]:C.coral[800]}}>
+                <span>{c.checkedIn?"✅":"—"}</span>
+                <span>{c.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:14}}>
         <MetricCard label="対象メンバー" value={users.length} sub="名"/>
         <MetricCard label="評価完了" value={done} sub={`/ ${users.length} 名`}/>
@@ -928,8 +959,8 @@ const SalesMemberStats = ({uid, allReports}) => {
 };
 
 // ── 販売実績 管理者ダッシュボード ─────────────────────────────
-const SalesManagerDash = ({allReports}) => {
-  const [tab,setTab] = useState("daily");
+const SalesManagerDash = ({allReports, users}) => {
+  const [tab,setTab] = useState("checkin");
   const [filterAgency,setFilterAgency] = useState("");
   const [filterStore,setFilterStore] = useState("");
   const [filterCarrier,setFilterCarrier] = useState("all");
@@ -939,6 +970,23 @@ const SalesManagerDash = ({allReports}) => {
   const [dateTo,setDateTo] = useState(new Date().toLocaleDateString("sv-SE"));
   const [deleting,setDeleting] = useState(null);
   const now = new Date();
+
+  // ── 本日の入店状況 ────────────────────────────────────────
+  const todayCheckins = (users||[]).map(u=>{
+    const report = allReports.find(r=>r.uid===u.id && r.date===todayStr());
+    return {
+      id: u.id,
+      name: u.name,
+      checkedIn: !!(report && (report.storeName || report.agency || report.defaultCarrierId)),
+      storeName: report?.storeName || "",
+      agency: report?.agency || "",
+      updatedAt: report?.updatedAt?.toDate?.() || null,
+    };
+  }).sort((a,b)=>{
+    if(a.checkedIn!==b.checkedIn) return a.checkedIn?-1:1;
+    return a.name.localeCompare(b.name);
+  });
+  const checkedInCount = todayCheckins.filter(c=>c.checkedIn).length;
 
   const deleteReport = async (uid, date) => {
     if (!window.confirm(`${date} の報告データを削除しますか？この操作は取り消せません。`)) return;
@@ -1144,8 +1192,45 @@ const SalesManagerDash = ({allReports}) => {
         </div>
       </Card>
       <div style={{display:"flex",gap:4,background:C.gray[50],borderRadius:10,padding:4,marginBottom:14,flexWrap:"wrap"}}>
-        {[{id:"daily",label:"日別一覧"},{id:"carrier",label:"キャリア別"},{id:"agency",label:"代理店・店舗別"},{id:"ranking",label:"メンバー別"}].map(t=><button key={t.id} style={tabStyle(t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}
+        {[{id:"checkin",label:"入店状況"},{id:"daily",label:"日別一覧"},{id:"carrier",label:"キャリア別"},{id:"agency",label:"代理店・店舗別"},{id:"ranking",label:"メンバー別"}].map(t=><button key={t.id} style={tabStyle(t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}
       </div>
+      {tab==="checkin"&&(
+        <Card>
+          <CardTitle>本日の入店状況（{todayStr()}）</CardTitle>
+          {(!users||users.length===0)?(
+            <div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>メンバー情報がありません</div>
+          ):(
+            <div>
+              <div style={{display:"flex",gap:10,marginBottom:14}}>
+                <div style={{background:C.teal[50],borderRadius:8,padding:"10px 14px",flex:1,textAlign:"center"}}>
+                  <div style={{fontSize:22,fontWeight:700,color:C.teal[800]}}>{checkedInCount}</div>
+                  <div style={{fontSize:11,color:C.teal[800]}}>入店済み</div>
+                </div>
+                <div style={{background:C.coral[50],borderRadius:8,padding:"10px 14px",flex:1,textAlign:"center"}}>
+                  <div style={{fontSize:22,fontWeight:700,color:C.coral[800]}}>{todayCheckins.length-checkedInCount}</div>
+                  <div style={{fontSize:11,color:C.coral[800]}}>未入店</div>
+                </div>
+              </div>
+              {todayCheckins.map(c=>(
+                <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 6px",borderBottom:`0.5px solid ${C.gray[50]}`}}>
+                  <span style={{fontSize:16,width:20,textAlign:"center",flexShrink:0}}>{c.checkedIn?"✅":"—"}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{c.name}</div>
+                    {c.checkedIn?(
+                      <div style={{fontSize:11,color:C.gray[400]}}>
+                        {c.storeName}{c.agency?`（${c.agency}）`:""}
+                        {c.updatedAt?` ・ ${c.updatedAt.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}`:""}
+                      </div>
+                    ):(
+                      <div style={{fontSize:11,color:C.coral[600]}}>まだ入店報告がありません</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
       {tab==="daily"&&(
         <Card>
           <CardTitle>日別一覧（今月）</CardTitle>
@@ -1314,7 +1399,7 @@ const SalesApprovalPage = () => {
   );
 };
 
-const SalesPage = ({currentUser, userProfile, isManager, allReports}) => {
+const SalesPage = ({currentUser, userProfile, isManager, allReports, users}) => {
   const [tab,setTab] = useState("input");
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -1337,7 +1422,7 @@ const SalesPage = ({currentUser, userProfile, isManager, allReports}) => {
       </div>
       {tab==="input"&&<SalesInputForm uid={currentUser.uid} displayName={userProfile?.name||currentUser.email}/>}
       {tab==="mystats"&&<SalesMemberStats uid={currentUser.uid} allReports={allReports}/>}
-      {tab==="dashboard"&&isManager&&<SalesManagerDash allReports={allReports}/>}
+      {tab==="dashboard"&&isManager&&<SalesManagerDash allReports={allReports} users={users}/>}
       {tab==="approval"&&isManager&&<SalesApprovalPage/>}
     </div>
   );
@@ -2534,11 +2619,11 @@ export default function App() {
 
   return (
     <AppShell nav={MANAGER_NAV} page={page} setPage={setPage} currentUser={{...authUser,displayName:userProfile?.name||authUser.email,role:"manager"}} activePeriod={activePeriod} onLogout={handleLogout} pageTitle={pageTitles[page]}>
-      {page==="dashboard"&&<Dashboard users={users} evals={evals} onNavigate={setPage} onSelectUser={setSelectedUserId}/>}
+      {page==="dashboard"&&<Dashboard users={users} evals={evals} onNavigate={setPage} onSelectUser={setSelectedUserId} allReports={allReports}/>}
       {page==="evaluation"&&<EvaluationPage users={users} evals={evals} onSaveEval={onSaveEval} selectedUserId={selectedUserId} setSelectedUserId={setSelectedUserId} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="results"&&<ResultsPage users={users} evals={evals}/>}
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
-      {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports}/>}
+      {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports} users={users}/>}
       {page==="interview"&&<InterviewPage users={users}/>}
       {page==="training"&&<TrainingPDCAPage users={users}/>}
       {page==="linesend"&&<LineSendPage/>}
