@@ -358,6 +358,8 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
   const avgScore = scored.length?Math.round(scored.reduce((a,u)=>a+u.managerScore,0)/scored.length):null;
   const [sendingReminder,setSendingReminder] = useState(false);
   const [reminderResult,setReminderResult] = useState(null);
+  const [showReminderModal,setShowReminderModal] = useState(false);
+  const [reminderSelected,setReminderSelected] = useState([]);
 
   // ── 本日の入店状況（ホーム画面ですぐ確認できるように）───────
   const todayCheckins = users.map(u=>{
@@ -374,10 +376,20 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
   });
   const checkedInCount = todayCheckins.filter(c=>c.checkedIn).length;
 
-  const sendCheckinReminder = async () => {
+  const openReminderModal = () => {
     const targets = todayCheckins.filter(c=>!c.checkedIn);
     if(targets.length===0) return;
-    if(!window.confirm(`未入店の${targets.length}名にLINEでリマインドを送信します。よろしいですか？`)) return;
+    setReminderSelected(targets.map(t=>t.id)); // デフォルトは全員選択（休みの人はモーダルで外す）
+    setReminderResult(null);
+    setShowReminderModal(true);
+  };
+
+  const toggleReminderTarget = (id) => {
+    setReminderSelected(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
+  };
+
+  const sendCheckinReminder = async () => {
+    if(reminderSelected.length===0){alert("送信先を1人以上選択してください");return;}
     setSendingReminder(true);
     setReminderResult(null);
     try {
@@ -385,9 +397,10 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
       const lineSnap = await getDocs(fsCollection(db,"lineUsers"));
       const uidToLineId = {};
       lineSnap.forEach(d=>{ const data=d.data(); if(data.uid) uidToLineId[data.uid]=d.id; });
-      const lineIds = targets.map(t=>uidToLineId[t.id]).filter(Boolean);
+      const lineIds = reminderSelected.map(id=>uidToLineId[id]).filter(Boolean);
       if(lineIds.length===0){
-        setReminderResult({error:"LINE連携済みの未入店メンバーがいません。"});
+        setReminderResult({error:"LINE連携済みの対象者がいません。"});
+        setSendingReminder(false);
         return;
       }
       const res = await fetch("/api/send-line",{
@@ -400,6 +413,7 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
       });
       const data = await res.json();
       setReminderResult(data.error ? {error:data.error} : {success:`${data.successCount??lineIds.length}/${lineIds.length}名に送信しました`});
+      setShowReminderModal(false);
     } catch {
       setReminderResult({error:"送信に失敗しました。"});
     } finally {
@@ -425,7 +439,7 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                   <div style={{fontSize:11,color:C.gray[400]}}>未入店（{users.length-checkedInCount}名）</div>
-                  <Btn small onClick={sendCheckinReminder} disabled={sendingReminder}>{sendingReminder?"送信中...":"📨 LINEでリマインド"}</Btn>
+                  <Btn small onClick={openReminderModal}>📨 LINEでリマインド</Btn>
                 </div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:reminderResult?8:0}}>
                   {todayCheckins.filter(c=>!c.checkedIn).map(c=>(
@@ -438,6 +452,26 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
           </div>
         )}
       </Card>
+      {showReminderModal&&<Modal title="LINEでリマインドを送信" onClose={()=>setShowReminderModal(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:12,color:C.gray[600]}}>送信する相手を選んでください。シフトが休みの人はチェックを外してください。</div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:280,overflowY:"auto"}}>
+            {todayCheckins.filter(c=>!c.checkedIn).map(c=>(
+              <label key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:reminderSelected.includes(c.id)?C.purple[50]:C.gray[50],borderRadius:8,cursor:"pointer"}}>
+                <input type="checkbox" checked={reminderSelected.includes(c.id)} onChange={()=>toggleReminderTarget(c.id)} style={{accentColor:C.purple[400]}}/>
+                <span style={{fontSize:13,color:C.gray[800]}}>{c.name}</span>
+              </label>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.gray[400]}}>{reminderSelected.length}名を選択中</span>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={()=>setShowReminderModal(false)}>キャンセル</Btn>
+              <Btn primary onClick={sendCheckinReminder} disabled={sendingReminder||reminderSelected.length===0}>{sendingReminder?"送信中...":"送信する"}</Btn>
+            </div>
+          </div>
+        </div>
+      </Modal>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:14}}>
         <MetricCard label="対象メンバー" value={users.length} sub="名"/>
         <MetricCard label="評価完了" value={done} sub={`/ ${users.length} 名`}/>
