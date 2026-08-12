@@ -375,17 +375,27 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
   return (
     <div>
       <Card style={{borderLeft:`3px solid ${checkedInCount===users.length&&users.length>0?C.teal[400]:C.amber[400]}`}}>
-        <CardTitle action={<Btn small onClick={()=>onNavigate("sales")}>販売実績を見る</Btn>}>本日の入店状況（{checkedInCount}/{users.length}名）</CardTitle>
+        <CardTitle action={<Btn small onClick={()=>onNavigate("sales")}>販売実績を見る</Btn>}>本日の入店状況</CardTitle>
         {users.length===0?(
           <div style={{textAlign:"center",padding:"10px",color:C.gray[400],fontSize:13}}>メンバーがいません</div>
         ):(
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {todayCheckins.map(c=>(
-              <div key={c.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:20,background:c.checkedIn?C.teal[50]:C.coral[50],fontSize:12,color:c.checkedIn?C.teal[800]:C.coral[800]}}>
-                <span>{c.checkedIn?"✅":"—"}</span>
-                <span>{c.name}</span>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+              <div style={{fontSize:24,fontWeight:700,color:C.gray[800],flexShrink:0}}>{checkedInCount}<span style={{fontSize:13,fontWeight:400,color:C.gray[400]}}>/{users.length}名</span></div>
+              <div style={{flex:1,height:8,background:C.gray[100],borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${(checkedInCount/users.length)*100}%`,background:C.teal[400],borderRadius:4}}/></div>
+            </div>
+            {checkedInCount===users.length?(
+              <div style={{fontSize:13,color:C.teal[800]}}>✓ 全員入店済みです</div>
+            ):(
+              <div>
+                <div style={{fontSize:11,color:C.gray[400],marginBottom:6}}>未入店（{users.length-checkedInCount}名）</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {todayCheckins.filter(c=>!c.checkedIn).map(c=>(
+                    <span key={c.id} style={{fontSize:12,padding:"4px 10px",borderRadius:20,background:C.gray[50],color:C.gray[600]}}>{c.name}</span>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </Card>
