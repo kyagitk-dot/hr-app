@@ -40,13 +40,14 @@ async function parseWithAI(text: string): Promise<any | null> {
     "netLine": 数値,
     "creditCardNormal": 数値,
     "creditCardGold": 数値,
-    "energy": 数値
+    "energy": 数値,
+    "gas": 数値
   },
   "peripheralAmount": 数値
 }
 
 キャリア対応：docomo/ドコモ→docomo、ahamo/アハモ→ahamo、au/AU→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、その他格安SIM→other
-項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカノーマル/N/ノーマル→creditCardNormal、ゴールド→creditCardGold、電気/ガス→energy、周辺機器/アクセサリ→peripheralAmount
+項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカノーマル/N/ノーマル→creditCardNormal、ゴールド→creditCardGold、電気→energy、ガス→gas、周辺機器/アクセサリ→peripheralAmount
 重要：「クレカ」「カード」「クレジット」など種別が不明な場合は "creditCardAmbiguous" フィールドに件数を入れてください。ノーマル・ゴールドが明示されている場合のみ各フィールドに入れてください。
 件数が不明な項目は0にしてください。carrierId が判断できない場合は null にしてください。`;
 
@@ -166,7 +167,7 @@ const FIELD_KEYWORDS: Record<string, string> = {
   クレカg: "creditCardGold",
   ゴールド: "creditCardGold",
   電気: "energy",
-  ガス: "energy",
+  ガス: "gas",
 };
 
 // 周辺機器は「件数」ではなく「金額（円）」で別集計する
@@ -180,7 +181,8 @@ const FIELD_LABELS: Record<string, string> = {
   netLine: "ネット",
   creditCardNormal: "クレカ(N)",
   creditCardGold: "クレカ(G)",
-  energy: "電気/ガス",
+  energy: "電気",
+  gas: "ガス",
 };
 
 const CARRIER_LABELS: Record<string, string> = {
@@ -354,6 +356,7 @@ function totalOfEntry(e: any): number {
     "creditCardNormal",
     "creditCardGold",
     "energy",
+    "gas",
   ].reduce((s, k) => s + (e[k] || 0), 0);
 }
 
@@ -593,6 +596,7 @@ ${content}
             "creditCardNormal",
     "creditCardGold",
             "energy",
+            "gas",
           ];
 
           const lines = entries
@@ -802,7 +806,7 @@ ${content}
           const entries2: any[] = existing2.entries || [];
           const safeCarrierId2 = parsed.carrierId || "other";
           const idx2 = entries2.findIndex((e:any)=>e.carrierId===safeCarrierId2);
-          const emptyEntry2 = (carrierId:string)=>({carrierId,newContract:0,deviceChange:0,mnpIn:0,portIn:0,netLine:0,creditCardNormal:0,creditCardGold:0,energy:0});
+          const emptyEntry2 = (carrierId:string)=>({carrierId,newContract:0,deviceChange:0,mnpIn:0,portIn:0,netLine:0,creditCardNormal:0,creditCardGold:0,energy:0,gas:0});
           const newEntry = {...(idx2>=0?entries2[idx2]:emptyEntry2(safeCarrierId2)),[cardKey]:count,...(parsed.entry||{})};
           delete (newEntry as any).creditCardAmbiguous;
           if(idx2>=0) entries2[idx2]=newEntry; else entries2.push(newEntry);
@@ -835,7 +839,7 @@ ${content}
           const emptyEntry3 = (carrierId: string) => ({
             carrierId, locationType,
             newContract: 0, deviceChange: 0, mnpIn: 0, portIn: 0, netLine: 0,
-            creditCardNormal: 0, creditCardGold: 0, energy: 0,
+            creditCardNormal: 0, creditCardGold: 0, energy: 0, gas: 0,
           });
           // キャリア＋店舗／量販店の組み合わせで別集計する
           const idx3 = entries3.findIndex((e: any) => e.carrierId === safeCarrierId3 && (e.locationType || null) === locationType);
@@ -1256,6 +1260,7 @@ ${content}
         netLine: 0,
         creditCard: 0,
         energy: 0,
+        gas: 0,
       });
 
       if (Object.keys(parsed.entry).length > 0) {
