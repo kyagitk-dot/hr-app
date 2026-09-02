@@ -193,6 +193,13 @@ const CARRIER_LABELS: Record<string, string> = {
   other: "その他",
 };
 
+// 「店舗」か「量販店」かを件数報告のたびに確認する対象店舗（店舗名・代理店名のどちらかに含まれていれば対象）
+const LOCATION_TYPE_STORES = ["茨木太田", "コロワ甲子園"];
+function needsLocationType(storeName?: string, agency?: string): boolean {
+  const text = `${storeName || ""}${agency || ""}`;
+  return LOCATION_TYPE_STORES.some((s) => text.includes(s));
+}
+
 async function replyMessage(replyToken: string, text: string) {
   await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
@@ -809,6 +816,70 @@ ${content}
         continue;
       }
 
+      // ── 店舗／量販店 確認待ち（対象店舗のみ・報告のたびに毎回確認）──
+      if (pendingType2 === "awaiting_location_type") {
+        const isStore = text.includes("店舗") || text === "店";
+        const isRetail = text.includes("量販");
+        if (isStore || isRetail) {
+          const pendingData = pendingSnap2.data()!;
+          const parsedLoc = pendingData.parsedData;
+          const targetDate = pendingData.date || todayStr();
+          const locationType = isStore ? "store" : "retail";
+          const locationLabel = isStore ? "店舗" : "量販店";
+
+          const ref3 = db.collection("salesReports").doc(uid).collection("daily").doc(targetDate);
+          const snap3 = await ref3.get();
+          const existing3 = snap3.exists ? snap3.data()! : { entries: [], peripheralTotal: 0 };
+          const entries3: any[] = existing3.entries || [];
+          const safeCarrierId3 = parsedLoc.carrierId || existing3.defaultCarrierId || "other";
+          const emptyEntry3 = (carrierId: string) => ({
+            carrierId, locationType,
+            newContract: 0, deviceChange: 0, mnpIn: 0, portIn: 0, netLine: 0,
+            creditCardNormal: 0, creditCardGold: 0, energy: 0,
+          });
+          // キャリア＋店舗／量販店の組み合わせで別集計する
+          const idx3 = entries3.findIndex((e: any) => e.carrierId === safeCarrierId3 && (e.locationType || null) === locationType);
+
+          if (Object.keys(parsedLoc.entry || {}).length > 0) {
+            if (idx3 >= 0) {
+              entries3[idx3] = { ...entries3[idx3], ...parsedLoc.entry };
+            } else {
+              entries3.push({ ...emptyEntry3(safeCarrierId3), ...parsedLoc.entry });
+            }
+          }
+
+          const newPeripheralTotal3 = (existing3.peripheralTotal || 0) + (parsedLoc.peripheralAmount || 0);
+
+          await ref3.set(
+            {
+              uid, displayName, date: targetDate,
+              agency: parsedLoc.agency || existing3.agency || "",
+              storeName: parsedLoc.storeName || existing3.storeName || "",
+              entries: entries3,
+              peripheralTotal: newPeripheralTotal3,
+              updatedAt: new Date(),
+              createdAt: existing3.createdAt || new Date(),
+            },
+            { merge: true }
+          );
+
+          await db.collection("lineUsersPending").doc(lineUserId).delete();
+
+          const itemTotal3 = Object.values(parsedLoc.entry || {}).reduce((a: number, b) => a + (b as number), 0);
+          const parts3: string[] = [];
+          if (itemTotal3 > 0) parts3.push(`件数：${itemTotal3}件`);
+          if (parsedLoc.peripheralAmount > 0) parts3.push(`周辺機器：${parsedLoc.peripheralAmount.toLocaleString()}円`);
+
+          await replyMessage(
+            replyToken,
+            `${targetDate !== todayStr() ? `【${targetDate}の報告】\n` : ""}（${locationLabel}）記録しました！\n${parts3.join("\n")}\nアプリでも確認できます。`
+          );
+        } else {
+          await replyMessage(replyToken, "「店舗」または「量販店」と返信してください。");
+        }
+        continue;
+      }
+
       // ── pending：入店フロー（一括入力）──────────────────
       if (pendingType2 === "awaiting_checkin_all") {
         // 「代理店・店舗・キャリア」を「・」「/」「,」「、」で分割
@@ -1152,6 +1223,23 @@ ${content}
         await replyMessage(
           replyToken,
           `クレカ${ambiguousCount}件を受け取りました！\nノーマルですか？ゴールドですか？\n\n「ノーマル」または「ゴールド」と返信してください。`
+        );
+        continue;
+      }
+
+      // ── 店舗／量販店の確認（対象店舗は報告のたびに毎回聞く）──
+      const locationCheckStoreName = parsed.storeName || existing.storeName || "";
+      const locationCheckAgency = parsed.agency || existing.agency || "";
+      if (needsLocationType(locationCheckStoreName, locationCheckAgency)) {
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_location_type",
+          parsedData: parsed,
+          date,
+          updatedAt: new Date(),
+        });
+        await replyMessage(
+          replyToken,
+          `この報告は店舗ですか？量販店ですか？\n\n「店舗」または「量販店」と返信してください。`
         );
         continue;
       }
