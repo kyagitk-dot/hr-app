@@ -139,7 +139,8 @@ const SALES_FIELDS = [
   {key:"netLine",label:"ネット回線"},
   {key:"creditCardNormal",label:"クレカ(N)"},
   {key:"creditCardGold",label:"クレカ(G)"},
-  {key:"energy",label:"電気・ガス"},
+  {key:"energy",label:"電気"},
+  {key:"gas",label:"ガス"},
 ];
 const toDateStr = (d) => d.toLocaleDateString("sv-SE");
 const todayStr = () => toDateStr(new Date());
@@ -1139,19 +1140,20 @@ const SalesManagerDash = ({allReports, users}) => {
 
     // ── 日別明細シート ──────────────────────────────────────
     const dailyData = [
-      [`販売実績レポート`, "", "", "", "", "", "", "", "", "", "", "", ""],
-      [`対象期間：${periodLabel}　　対象：${personLabel}　　出力日：${today}`, "", "", "", "", "", "", "", "", "", "", "", ""],
+      [`販売実績レポート`, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+      [`対象期間：${periodLabel}　　対象：${personLabel}　　出力日：${today}`, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
       [],
-      ["日付","氏名","店舗","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレカ(N)","クレカ(G)","電気・ガス","合計件数","周辺機器(円)"],
+      ["日付","氏名","店舗","区分","キャリア","新規契約","機種変更","MNP転入","番号移行","ネット回線","クレカ(N)","クレカ(G)","電気","ガス","合計件数","周辺機器(円)"],
       ...dailyRows.map(r=>[
         r.date, r.name, r.store||"",
+        r.locationType==="store"?"店舗":r.locationType==="retail"?"量販店":"",
         CARRIERS_SALES.find(c=>c.id===r.carrier)?.label||r.carrier,
         r.newContract||0, r.deviceChange||0, r.mnpIn||0, r.portIn||0,
-        r.netLine||0, r.creditCardNormal||0, r.creditCardGold||0, r.energy||0,
+        r.netLine||0, r.creditCardNormal||0, r.creditCardGold||0, r.energy||0, r.gas||0,
         salesTotal(r), r.peripheralTotal||0
       ]),
       [],
-      ["合計", "", "", "",
+      ["合計", "", "", "", "",
         dailyRows.reduce((s,r)=>s+(r.newContract||0),0),
         dailyRows.reduce((s,r)=>s+(r.deviceChange||0),0),
         dailyRows.reduce((s,r)=>s+(r.mnpIn||0),0),
@@ -1160,18 +1162,19 @@ const SalesManagerDash = ({allReports, users}) => {
         dailyRows.reduce((s,r)=>s+(r.creditCardNormal||0),0),
         dailyRows.reduce((s,r)=>s+(r.creditCardGold||0),0),
         dailyRows.reduce((s,r)=>s+(r.energy||0),0),
+        dailyRows.reduce((s,r)=>s+(r.gas||0),0),
         dailyRows.reduce((s,r)=>s+salesTotal(r),0),
         dailyRows.reduce((s,r)=>s+(r.peripheralTotal||0),0),
       ],
     ];
     const ws1 = XLSX.utils.aoa_to_sheet(dailyData);
-    ws1["!cols"] = [{wch:12},{wch:12},{wch:14},{wch:14},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:10},{wch:8},{wch:12}];
-    ws1["!merges"] = [{s:{r:0,c:0},e:{r:0,c:12}},{s:{r:1,c:0},e:{r:1,c:12}}];
+    ws1["!cols"] = [{wch:12},{wch:12},{wch:14},{wch:8},{wch:14},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12}];
+    ws1["!merges"] = [{s:{r:0,c:0},e:{r:0,c:15}},{s:{r:1,c:0},e:{r:1,c:15}}];
     // スタイル適用
     const totalRow = dailyData.length - 1;
     const headerRow = 3;
     dailyData[headerRow].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:headerRow,c}); if(ws1[ref]) ws1[ref].s=subHeaderStyle; });
-    dailyData.slice(4, totalRow).forEach((_,ri)=>{ dailyData[4+ri].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:4+ri,c}); if(ws1[ref]) ws1[ref].s=c<4?cellStyle:numStyle; }); });
+    dailyData.slice(4, totalRow).forEach((_,ri)=>{ dailyData[4+ri].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:4+ri,c}); if(ws1[ref]) ws1[ref].s=c<5?cellStyle:numStyle; }); });
     dailyData[totalRow].forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:totalRow,c}); if(ws1[ref]) ws1[ref].s=totalStyle; });
     const t0=XLSX.utils.encode_cell({r:0,c:0}); if(ws1[t0]) ws1[t0].s=titleStyle;
     const i0=XLSX.utils.encode_cell({r:1,c:0}); if(ws1[i0]) ws1[i0].s=infoStyle;
@@ -1321,18 +1324,20 @@ const SalesManagerDash = ({allReports, users}) => {
           {dailyRows.length===0?<div style={{textAlign:"center",padding:"20px",color:C.gray[400],fontSize:13}}>データがありません</div>:(
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","キャリア","新規","機変","MNP転入","番号移行","ネット","CC","電気/G","計","周辺機器",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <thead><tr style={{borderBottom:`0.5px solid ${C.gray[100]}`}}>{["日付","氏名","代理店","店舗","区分","キャリア","新規","機変","MNP転入","番号移行","ネット","CC","電気","ガス","計","周辺機器",""].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:C.gray[400],fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                 <tbody>{dailyRows.map((r,i)=>{
                   const isFirstOfDay = i===0 || dailyRows[i-1].uid!==r.uid || dailyRows[i-1].date!==r.date;
                   const key = `${r.uid}_${r.date}`;
+                  const locationLabel = r.locationType==="store"?"店舗":r.locationType==="retail"?"量販店":"-";
                   return(
                   <tr key={i} style={{borderBottom:`0.5px solid ${C.gray[50]}`}}>
                     <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{r.date}</td>
                     <td style={{padding:"6px 8px",fontWeight:500,color:C.gray[800]}}>{r.name}</td>
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.agency||"-"}</td>
                     <td style={{padding:"6px 8px",color:C.gray[600]}}>{r.store||"-"}</td>
+                    <td style={{padding:"6px 8px"}}>{r.locationType?<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:r.locationType==="store"?C.teal[50]:C.amber[50],color:r.locationType==="store"?C.teal[800]:C.amber[800],fontWeight:500}}>{locationLabel}</span>:<span style={{color:C.gray[200]}}>-</span>}</td>
                     <td style={{padding:"6px 8px"}}><span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:CARRIER_COLORS_S[r.carrier]+"20",color:CARRIER_COLORS_S[r.carrier],fontWeight:500}}>{CARRIERS_SALES.find(c=>c.id===r.carrier)?.label}</span></td>
-                    {["newContract","deviceChange","mnpIn","portIn","netLine","creditCardNormal","creditCardGold","energy"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
+                    {["newContract","deviceChange","mnpIn","portIn","netLine","creditCardNormal","creditCardGold","energy","gas"].map(k=><td key={k} style={{padding:"6px 8px",textAlign:"right",color:r[k]>0?C.gray[800]:C.gray[200]}}>{r[k]||0}</td>)}
                     <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.purple[800]}}>{salesTotal(r)}</td>
                     <td style={{padding:"6px 8px",textAlign:"right",color:r.peripheralTotal>0?C.gray[800]:C.gray[200]}}>{r.peripheralTotal?r.peripheralTotal.toLocaleString()+"円":"-"}</td>
                     <td style={{padding:"6px 8px"}}>
