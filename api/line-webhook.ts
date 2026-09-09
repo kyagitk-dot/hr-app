@@ -1082,6 +1082,84 @@ ${content}
         continue;
       }
 
+      // ── スタッフ名で先月の現場別実績を確認 ───────────────
+      // 「山田太郎」のように登録済みスタッフの名前だけを送ると、
+      // その人の先月の実績を現場（店舗）別に集計して返す
+      const plausibleNameMatch = text.match(/^[^\s　！!？?。、\n0-9０-９]{2,10}$/);
+      if (plausibleNameMatch) {
+        const targetUserSnap = await db
+          .collection("users")
+          .where("name", "==", text)
+          .limit(1)
+          .get();
+        if (!targetUserSnap.empty) {
+          const targetUserDoc = targetUserSnap.docs[0];
+          const targetUid = targetUserDoc.id;
+          const targetName = targetUserDoc.data().name || text;
+
+          // 先月の日付範囲を計算
+          const now = new Date();
+          const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const lastMonthYear = lastMonthDate.getFullYear();
+          const lastMonthMonth = lastMonthDate.getMonth(); // 0-indexed
+          const startStr = `${lastMonthYear}-${String(lastMonthMonth + 1).padStart(2, "0")}-01`;
+          const lastDayOfMonth = new Date(lastMonthYear, lastMonthMonth + 1, 0).getDate();
+          const endStr = `${lastMonthYear}-${String(lastMonthMonth + 1).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
+
+          const reportsSnap = await db
+            .collection("salesReports")
+            .doc(targetUid)
+            .collection("daily")
+            .where("date", ">=", startStr)
+            .where("date", "<=", endStr)
+            .get();
+
+          if (reportsSnap.empty) {
+            await replyMessage(
+              replyToken,
+              `【${targetName}さん 先月（${lastMonthYear}年${lastMonthMonth + 1}月）の実績】\n\n先月の報告データがありません。`
+            );
+          } else {
+            const itemKeysForLookup = [
+              "newContract", "deviceChange", "mnpIn", "portIn",
+              "netLine", "creditCardNormal", "creditCardGold", "energy", "gas",
+            ];
+            const siteBreakdown: Record<string, Record<string, number>> = {};
+            const siteTotals: Record<string, number> = {};
+            let grandTotal = 0;
+            reportsSnap.forEach((doc) => {
+              const d = doc.data();
+              const site = d.storeName || d.agency || "現場未設定";
+              if (!siteBreakdown[site]) siteBreakdown[site] = {};
+              (d.entries || []).forEach((e: any) => {
+                itemKeysForLookup.forEach((k) => {
+                  const v = e[k] || 0;
+                  if (v > 0) {
+                    siteBreakdown[site][k] = (siteBreakdown[site][k] || 0) + v;
+                    siteTotals[site] = (siteTotals[site] || 0) + v;
+                    grandTotal += v;
+                  }
+                });
+              });
+            });
+            const lines = Object.entries(siteTotals)
+              .sort((a, b) => (b[1] as number) - (a[1] as number))
+              .map(([site, total]) => {
+                const itemDesc = Object.entries(siteBreakdown[site])
+                  .map(([k, v]) => `${FIELD_LABELS[k] || k}：${v}件`)
+                  .join("、");
+                return `■${site}（小計${total}件）\n${itemDesc}`;
+              })
+              .join("\n\n");
+            await replyMessage(
+              replyToken,
+              `【${targetName}さん 先月（${lastMonthYear}年${lastMonthMonth + 1}月）の実績（現場別）】\n\n${lines}\n\n合計：${grandTotal}件`
+            );
+          }
+          continue;
+        }
+      }
+
       // ── 件数報告として解析（AI優先）────────────────────
       const { date, cleanText } = extractDateFromText(text);
       // まずAI解析を試みる
