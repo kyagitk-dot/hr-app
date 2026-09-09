@@ -216,23 +216,16 @@ const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
 };
 
 const BottomNav = ({nav,page,setPage}) => {
-  // モバイルでは最大6項目に絞る（現在のページを優先表示）
-  const MAX = 6;
-  let displayNav = nav;
-  if(nav.length > MAX){
-    const currentIdx = nav.findIndex(n=>n.id===page);
-    // 現在のページが含まれるようにスライス
-    let start = Math.max(0, Math.min(currentIdx - 2, nav.length - MAX));
-    displayNav = nav.slice(start, start + MAX);
-  }
   return (
-    <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,display:"flex",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
-      {displayNav.map(n=>(
-        <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"12px 2px 14px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,color:page===n.id?C.purple[600]:C.gray[400],minWidth:0}}>
-          <NavIcon name={n.icon} size={26}/>
-          <span style={{fontSize:12,fontWeight:page===n.id?600:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{n.shortLabel||n.label}</span>
-        </button>
-      ))}
+    <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`0.5px solid ${C.gray[100]}`,zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
+      <div style={{display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        {nav.map(n=>(
+          <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:"0 0 auto",minWidth:66,padding:"12px 8px 14px",border:"none",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,color:page===n.id?C.purple[600]:C.gray[400]}}>
+            <NavIcon name={n.icon} size={26}/>
+            <span style={{fontSize:12,fontWeight:page===n.id?600:500,whiteSpace:"nowrap"}}>{n.shortLabel||n.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 };
