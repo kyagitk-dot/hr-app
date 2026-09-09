@@ -245,6 +245,17 @@ function verifySignature(body: string, signature: string): boolean {
 
 const todayStr = () => new Date().toLocaleDateString("sv-SE");
 
+// 日本の祝日かどうかを判定（内閣府準拠のオープンデータAPIを利用）
+async function isJapanHoliday(dateStr: string): Promise<boolean> {
+  try {
+    const res = await fetch("https://holidays-jp.github.io/api/v1/date.json");
+    const data = await res.json();
+    return !!data[dateStr];
+  } catch {
+    return false;
+  }
+}
+
 // テキストから日付を抽出する関数
 // 「7月6日」「7/6」「6日」などに対応
 function extractDateFromText(text: string): { date: string; cleanText: string } {
@@ -802,9 +813,11 @@ ${content}
         const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
         const snap0 = await ref.get();
         let checkoutMessage = "";
+        let todayTotal = 0;
         if (snap0.exists) {
           const data = snap0.data()!;
           const total = (data.entries||[]).reduce((s:number, e:any)=>s+totalOfEntry(e), 0);
+          todayTotal = total;
           const storeName = data.storeName || "";
           const parts = (data.entries||[])
             .filter((e:any)=>totalOfEntry(e)>0)
@@ -823,6 +836,42 @@ ${content}
           });
         }
         await replyMessage(replyToken, checkoutMessage);
+
+        // ── 土日祝：目標達成率が20%未満なら管理者にアラート ──
+        try {
+          const dow = new Date().getDay();
+          const isWeekend = dow === 0 || dow === 6;
+          const isHolidayToday = isWeekend ? false : await isJapanHoliday(today);
+          if (isWeekend || isHolidayToday) {
+            const goalSnap = await db.collection("goals").doc(uid).collection("daily").doc(today).get();
+            if (goalSnap.exists) {
+              const goalData = goalSnap.data()!;
+              const goalTotal = Object.values(goalData.goals || {}).reduce(
+                (s: number, v: any) => s + (v as number), 0
+              );
+              if (goalTotal > 0) {
+                const rate = todayTotal / goalTotal;
+                if (rate < 0.2) {
+                  const managersSnap = await db.collection("users").where("role", "==", "manager").get();
+                  const managerUids = managersSnap.docs.map((d) => d.id);
+                  if (managerUids.length > 0) {
+                    const managerLineSnap = await db
+                      .collection("lineUsers")
+                      .where("uid", "in", managerUids.slice(0, 10))
+                      .get();
+                    const alertMsg = `⚠️【実績アラート】\n${displayName}さんの本日（${today}）の実績が目標の20%未満です。\n\n実績：${todayTotal}件 / 目標：${goalTotal}件（達成率${Math.round(rate * 100)}%）`;
+                    for (const mDoc of managerLineSnap.docs) {
+                      await pushMessage(mDoc.id, { type: "text", text: alertMsg });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("目標未達アラートエラー:", err);
+        }
+
         continue;
       }
 
