@@ -210,6 +210,8 @@ const NavIcon = ({ name, size = 20, color = "currentColor" }) => {
       return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/><path d="M9.5 3.5A8.5 8.5 0 0 1 20.5 12"/><path d="M14.5 20.5A8.5 8.5 0 0 1 3.5 12"/></svg>;
     case "interview":
       return <svg {...common}><path d="M8 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="13" y2="15"/></svg>;
+    case "help":
+      return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2-2.4 3.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
   }
 };
 
@@ -1571,8 +1573,9 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
     {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
     {id:"mytraining",label:"研修PDCA",shortLabel:"研修",icon:"training"},
     ...(userProfile?.buddyOf?.length>0?[{id:"buddytraining",label:"バディ入力",shortLabel:"バディ",icon:"users"}]:[]),
+    {id:"help",label:"使い方",shortLabel:"ヘルプ",icon:"help"},
   ];
-  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績",mytraining:"研修PDCA",buddytraining:"バディ担当 研修PDCA"};
+  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績",mytraining:"研修PDCA",buddytraining:"バディ担当 研修PDCA",help:"使い方を検索"};
 
   return (
     <AppShell nav={EMP_NAV} page={page} setPage={setPage} currentUser={{...currentUser,displayName:userProfile?.name,role:"member",grade:userProfile?.grade}} activePeriod={activePeriod} onLogout={onLogout} pageTitle={pageTitles[page]}>
@@ -1604,6 +1607,7 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
       )}
       {page==="mytraining"&&<EmployeeTrainingPage uid={currentUser.uid}/>}
       {page==="buddytraining"&&userProfile?.buddyOf?.map(memberId=><BuddyTrainingPage key={memberId} memberId={memberId}/>)}
+      {page==="help"&&<HelpSearchPage isManager={false}/>}
     </AppShell>
   );
 };
@@ -2524,6 +2528,109 @@ const InterviewPage = ({users}) => {
   );
 };
 
+// ── 使い方検索（ヘルプ）ページ ─────────────────────────────────
+const APP_GUIDE_REFERENCE = `
+【Stellaアプリの構成ガイド】
+
+■ 共通（社員・管理者どちらも）
+- 「自己評価」または「評価フォーム」：G1〜G5の等級ごとの評価項目にスコア（1〜5）とコメントを入力する画面
+- 「評価結果」：上司評価・自己評価の総合点とランク（S/A/B/C/D）を確認する画面
+- 「販売実績」タブ内「日次入力」：日付・代理店・店舗・キャリアごとに新規/機変/MNP転入/番号移行/ネット/クレカ(N)/クレカ(G)/電気/ガス/周辺機器の件数を入力する画面。今日以外の日付を編集する場合は「修正申請」ボタンから申請する
+- 「販売実績」タブ内「自分の実績」：直近7日・今月で、自分のキャリア別内訳・項目別内訳・日別件数・全体ランキングを見る画面
+- 「研修PDCA」：上司が入力した研修のPlan/Do/Check/Actを閲覧し、コメントを送れる画面。LINEで「研修後報告：〇〇」と送るとAIフィードバックがここに記録される
+- 「バディ入力」：自分がバディ上司に設定されているメンバーがいる場合のみ表示され、そのメンバーの研修PDCAを入力できる
+
+■ 管理者のみ
+- 「ダッシュボード」（ホーム画面）：本日の入店状況（何名入店済みか、未入店者へのLINEリマインド送信ボタン）、対象メンバー数、評価完了数、チーム平均点、等級別構成、メンバー一覧（評価スコア）
+- 「結果・集計」：ランク別分布、等級別平均点、メンバー別スコア一覧
+- 「AI分析」：人事評価・販売実績・面談記録・研修PDCAについてAIに分析させる画面
+- 「販売実績」タブ内「管理ダッシュボード」：
+  - 「入店状況」タブ：本日誰が入店報告済みか一覧で確認
+  - 「日別一覧」タブ：日付・氏名・代理店・店舗・区分（店舗/量販店）・キャリア別の件数一覧。行の削除もここから
+  - 「キャリア別」タブ：キャリアごとの合計件数と周辺機器売上
+  - 「代理店・店舗別」タブ：代理店・店舗ごとの合計件数
+  - 「メンバー別」タブ：メンバーごとのランキング
+  - 「現場写真」タブ：日曜日の退店報告時に送られた現場写真の一覧
+  - 右上の「Excel出力」ボタンで、日別明細・キャリア別集計・店舗別集計・スタッフ別集計をまとめたExcelファイルをダウンロードできる
+- 「販売実績」タブ内「承認」：メンバーからの過去日修正申請を承認・却下する画面
+- 「面談記録」：メンバーごとの面談記録を追加・閲覧する画面
+- 「LINE送信」：LINE連携済みのメンバー全員、または個別選択してメッセージを送る画面
+- 「メンバー管理」：メンバーの追加・編集・削除、承認待ちメンバーの承認、バディ上司の設定、管理者権限の付与
+- 「設定」：アカウント情報、パスワード変更、部署リスト、等級定義、評価期間の管理
+
+■ LINEでできること（LINE公式アカウントにメッセージを送る）
+- 「入店報告」：代理店・店舗・キャリアを一括登録（例：〇〇エージェント・北花田店・ワイモバイル）。登録後は件数だけ送ればOK
+- 「退店報告」：本日の実績サマリーが届く。日曜日は現場写真の送信も求められる
+- 「追加報告」：過去の日付の実績を後から追加報告できる
+- 「今日の実績を見る」：本日の実績をキャリア別・項目別で確認
+- 「フォーマット」：報告の書き方の例を確認
+- 「目標 新規10件 MNP5件」のように送ると、その日の目標を設定できる
+- 「ランキング」：目標設定者の本日の達成率ランキングを確認
+- 「修正して」：今日の報告をリセットして送り直す
+- 「未入力」：本日まだ報告していないか確認
+- 「名前変更：新しい名前」：LINE上の表示名を変更
+- スタッフの名前だけを送ると、そのスタッフの先月の実績を現場別・項目別に確認できる
+- 土日祝に目標の20%未満の実績で退店報告すると、管理者にLINEでアラートが届く
+`;
+
+const HelpSearchPage = ({isManager}) => {
+  const [query,setQuery] = useState("");
+  const [loading,setLoading] = useState(false);
+  const [answer,setAnswer] = useState(null);
+  const [error,setError] = useState(null);
+  const [history,setHistory] = useState([]);
+
+  const search = async () => {
+    if(!query.trim()) return;
+    setLoading(true);setError(null);setAnswer(null);
+    try {
+      const prompt = `あなたは「Stella」という社内アプリの使い方案内アシスタントです。以下のアプリ構成ガイドの内容だけをもとに、質問に日本語で分かりやすく答えてください。質問者は${isManager?"管理者":"一般メンバー"}です。\n\n${APP_GUIDE_REFERENCE}\n\n【質問】\n${query}\n\n回答は「どの画面のどこにあるか」を具体的に示し、150字程度で簡潔にまとめてください。ガイドに載っていない内容は「アプリの中には見当たりませんでした」と正直に答えてください。`;
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({prompt}),
+      });
+      const data = await res.json();
+      if(data.result){
+        setAnswer(data.result);
+        setHistory(h=>[{q:query,a:data.result},...h].slice(0,10));
+      } else {
+        setError(data.error || "回答を取得できませんでした。");
+      }
+    } catch {
+      setError("通信エラーが発生しました。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <Card>
+        <CardTitle>わからないことを検索</CardTitle>
+        <div style={{display:"flex",gap:8}}>
+          <Input value={query} onChange={setQuery} placeholder="例：入店状況ってどこから見るの？"/>
+          <Btn primary onClick={search} disabled={loading||!query.trim()}>{loading?"検索中...":"検索"}</Btn>
+        </div>
+      </Card>
+      {loading&&<div style={{background:C.purple[50],border:`0.5px solid ${C.purple[200]}`,borderRadius:12,padding:"16px 18px",fontSize:13,color:C.purple[800]}}>調べています...</div>}
+      {error&&<div style={{background:C.coral[50],border:`0.5px solid ${C.coral[200]}`,borderRadius:12,padding:"16px 18px",fontSize:13,color:C.coral[800]}}>{error}</div>}
+      {answer&&<div style={{background:C.purple[50],border:`0.5px solid ${C.purple[200]}`,borderRadius:12,padding:"16px 18px",marginBottom:12}}><div style={{fontSize:13,color:C.purple[900],lineHeight:1.8,whiteSpace:"pre-wrap"}}>{answer}</div></div>}
+      {history.length>1&&(
+        <Card>
+          <CardTitle>これまでの質問</CardTitle>
+          {history.slice(1).map((h,i)=>(
+            <div key={i} style={{marginBottom:i<history.length-2?12:0,paddingBottom:i<history.length-2?12:0,borderBottom:i<history.length-2?`0.5px solid ${C.gray[50]}`:"none"}}>
+              <div style={{fontSize:12,fontWeight:500,color:C.gray[800],marginBottom:4}}>Q. {h.q}</div>
+              <div style={{fontSize:12,color:C.gray[600],lineHeight:1.6}}>{h.a}</div>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // ── LINE送信ページ ─────────────────────────────────────────────
 const LineSendPage = () => {
   const [lineUsers, setLineUsers] = useState([]);
@@ -2633,6 +2740,7 @@ const MANAGER_NAV = [
   {id:"training",label:"研修PDCA",shortLabel:"研修",icon:"training"},
   {id:"linesend",label:"LINE送信",shortLabel:"LINE",icon:"linesend"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
+  {id:"help",label:"使い方",shortLabel:"ヘルプ",icon:"help"},
   {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
 
@@ -2727,7 +2835,7 @@ export default function App() {
   const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",help:"使い方を検索",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
@@ -2744,8 +2852,8 @@ export default function App() {
       {page==="training"&&<TrainingPDCAPage users={users}/>}
       {page==="linesend"&&<LineSendPage/>}
       {page==="users"&&<UserManagePage users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} departments={settings.departments||DEPARTMENTS_DEFAULT}/>}
+      {page==="help"&&<HelpSearchPage isManager={true}/>}
       {page==="settings"&&<SettingsPage currentUser={authUser} departments={settings.departments||DEPARTMENTS_DEFAULT} setDepartments={d=>setSettings(s=>({...s,departments:d}))} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT} setGradeDefs={g=>setSettings(s=>({...s,gradeDefs:g}))} periods={settings.periods||PERIODS_DEFAULT} setPeriods={p=>setSettings(s=>({...s,periods:p}))} onSaveSettings={onSaveSettings}/>}
     </AppShell>
   );
 }
-
