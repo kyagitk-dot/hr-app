@@ -6,6 +6,7 @@
 import crypto from "crypto";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(
@@ -14,6 +15,10 @@ if (!getApps().length) {
   initializeApp({ credential: cert(serviceAccount) });
 }
 const db = getFirestore();
+// Firebase Storageのバケット名。Vercelの環境変数 FIREBASE_STORAGE_BUCKET で上書き可能
+// （Firebaseコンソール → Storage で実際のバケット名を確認してください）
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || "hr-app-c0a12.firebasestorage.app";
+const bucket = getStorage().bucket(STORAGE_BUCKET);
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
@@ -414,6 +419,50 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
+      // ── 画像メッセージ（日曜日の退勤報告時の現場写真）─────
+      if (event.type === "message" && event.message.type === "image") {
+        const lineUserIdImg = event.source.userId;
+        const replyTokenImg = event.replyToken;
+        const pendingSnapImg = await db.collection("lineUsersPending").doc(lineUserIdImg).get();
+        const pendingImgData = pendingSnapImg.exists ? pendingSnapImg.data()! : null;
+        if (pendingImgData && pendingImgData.type === "awaiting_checkout_photo") {
+          const linkSnapImg = await db.collection("lineUsers").doc(lineUserIdImg).get();
+          if (linkSnapImg.exists) {
+            const linkDataImg = linkSnapImg.data()!;
+            const imgUid = linkDataImg.uid;
+            const imgDisplayName = linkDataImg.displayName;
+            const targetDate = pendingImgData.date || todayStr();
+            try {
+              const contentRes = await fetch(
+                `https://api-data.line.me/v2/bot/message/${event.message.id}/content`,
+                { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } }
+              );
+              const arrayBuffer = await contentRes.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              const filePath = `checkout-photos/${imgUid}/${targetDate}.jpg`;
+              const file = bucket.file(filePath);
+              await file.save(buffer, { contentType: "image/jpeg" });
+              await file.makePublic();
+              const photoUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+
+              await db.collection("checkoutPhotos").doc(`${imgUid}_${targetDate}`).set({
+                uid: imgUid,
+                displayName: imgDisplayName,
+                date: targetDate,
+                photoUrl,
+                createdAt: new Date(),
+              });
+              await db.collection("lineUsersPending").doc(lineUserIdImg).delete();
+              await replyMessage(replyTokenImg, "📷 現場の写真を受け取りました！お疲れ様でした🏁");
+            } catch (err) {
+              console.error("写真アップロードエラー:", err);
+              await replyMessage(replyTokenImg, "写真のアップロードに失敗しました。もう一度送ってください。");
+            }
+          }
+        }
+        continue;
+      }
+
       if (event.type !== "message" || event.message.type !== "text") continue;
 
       const lineUserId = event.source.userId;
@@ -749,8 +798,10 @@ ${content}
       // ── 退店報告 ──────────────────────────────────────────
       if (text === "退店報告") {
         const today = todayStr();
+        const isSunday = new Date().getDay() === 0;
         const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
         const snap0 = await ref.get();
+        let checkoutMessage = "";
         if (snap0.exists) {
           const data = snap0.data()!;
           const total = (data.entries||[]).reduce((s:number, e:any)=>s+totalOfEntry(e), 0);
@@ -759,12 +810,19 @@ ${content}
             .filter((e:any)=>totalOfEntry(e)>0)
             .map((e:any)=>`${CARRIER_LABELS[e.carrierId]||e.carrierId}：${totalOfEntry(e)}件`)
             .join("\n");
-          await replyMessage(replyToken,
-            `🏁 ${storeName ? storeName+"、" : ""}お疲れ様でした！\n\n【本日の実績】\n${parts||"まだ報告なし"}\n\n合計：${total}件${data.peripheralTotal?"\n周辺機器："+data.peripheralTotal.toLocaleString()+"円":""}`
-          );
+          checkoutMessage = `🏁 ${storeName ? storeName+"、" : ""}お疲れ様でした！\n\n【本日の実績】\n${parts||"まだ報告なし"}\n\n合計：${total}件${data.peripheralTotal?"\n周辺機器："+data.peripheralTotal.toLocaleString()+"円":""}`;
         } else {
-          await replyMessage(replyToken, "🏁 お疲れ様でした！\n本日の報告はまだありません。");
+          checkoutMessage = "🏁 お疲れ様でした！\n本日の報告はまだありません。";
         }
+        if (isSunday) {
+          checkoutMessage += "\n\n📷 今日は日曜日です。現場の写真を1枚送ってください。";
+          await db.collection("lineUsersPending").doc(lineUserId).set({
+            type: "awaiting_checkout_photo",
+            date: today,
+            updatedAt: new Date(),
+          });
+        }
+        await replyMessage(replyToken, checkoutMessage);
         continue;
       }
 
