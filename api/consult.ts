@@ -45,17 +45,19 @@ async function pushText(to: string, text: string) {
 // report  : 件数報告（キャリア名や「新規3件」など販売件数の報告）
 // memo    : 予定・約束・支払い・案件の動きなど「記録しておくべきこと」
 // consult : 相談・質問・悩み・雑談など「返事がほしいこと」
-export type Intent = 'report' | 'memo' | 'consult';
+export type Intent = 'report' | 'memo' | 'consult' | 'schedule' | 'done' | 'stats';
 export async function classifyIntent(text: string, inSession: boolean): Promise<Intent> {
   const system = `${COMPANY.name}（${COMPANY.business}）の社員がLINEで送ってきた文章を分類します。次のどれか1語だけを返してください。
 report  : 販売件数の報告。キャリア名（docomo/au/SoftBank/ワイモバイル/UQなど）や「新規3件」「MNP1」「機変2 クレカ1」のように、項目と件数だけを並べた短い文。店舗名が付くこともある
 memo    : 予定・約束・期日・支払い・請求・取引先とのやり取りの記録など、「覚えておいてほしい事実や予定」を書いている文。「来週A社に見積もり」「25日に家賃の支払い」「明日B社と打ち合わせ」など
+schedule: 予定を「見たい・教えて」という照会。「今週の予定は？」「田中さんの来週の予定」「みんな何入ってる？」など
+done    : 何かが「終わった・完了した・済んだ」という報告。「A社の件終わった」「家賃払った」など
+stats   : 自分の販売実績を知りたい。「今月の実績は？」「今日何件だっけ」など
 consult : 質問・相談・悩み・意見を求めている・雑談・報告への返事など、「返事や助言がほしい」文
-判断のコツ：件数と項目名だけの無機質な文は report。文章になっていて予定や約束を語っていれば memo。問いかけや気持ちが入っていれば consult。
+判断のコツ：件数と項目名だけの無機質な文は report。文章になっていて予定や約束を語っていれば memo（他人に予定を入れる依頼「田中さんに来週B社訪問入れて」も memo）。問いかけや気持ちが入っていれば consult。
 ${inSession ? '注意：この人は直前まで相談中です。件数報告でなければ consult にしてください。' : '迷ったら consult。'}`;
   const out = (await claude(system, [{ role: 'user', content: text }], 5)).toLowerCase();
-  if (out.startsWith('report')) return 'report';
-  if (out.startsWith('memo')) return 'memo';
+  for (const k of ['report', 'memo', 'schedule', 'done', 'stats'] as Intent[]) if (out.startsWith(k)) return k;
   return 'consult';
 }
 
