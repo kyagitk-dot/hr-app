@@ -1,12 +1,14 @@
 // api/morning-brief.ts
-// 毎朝のブリーフィング — work_memos（業務メモ）を読み、
-//   ・社員それぞれに「自分のメモだけ」のブリーフィング
-//   ・admin には全員分をまとめた全体版
-// を Claude で作って LINE にプッシュする。
-// GitHub Actions (.github/workflows/morning-brief.yml) から毎朝8時(JST)に叩かれる。
+// 毎時動くスケジューラー（GitHub Actions から毎時0分に呼ばれる）
+//   ・本人設定の時刻・曜日に合わせて「自分のメモだけ」のまとめを送る
+//   ・admin には全社まとめ（全体版）
+//   ・声掛け：本人設定の回数に応じて、しばらく使っていない人に一言
+// 会社固有の設定は assistant-config.ts、本人の設定は user-settings.ts を参照。
 
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { COMPANY, ASSISTANT } from "./assistant-config";
+import { getSettings, personaFor, UserSettings } from "./user-settings";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}");
@@ -17,16 +19,14 @@ const db = getFirestore();
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
-// 全体版ブリーフィングを受け取る人（LINE連携時の表示名）。role が admin のユーザーにも届く
-const ADMIN_NAMES = ["八木幸平"];
-
 // ── 日付ユーティリティ（JST）──────────────────────────
-function jstToday(): string {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+const jstNow = () => new Date(Date.now() + 9 * 60 * 60 * 1000);
+const jstToday = () => jstNow().toISOString().slice(0, 10);
 function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 }
+// 声掛けの週回数 → 曜日
+const NUDGE_DAYS: Record<number, number[]> = { 0: [], 1: [3], 2: [2, 5], 3: [1, 3, 5] };
 
 // ── LINE push ─────────────────────────────────────────
 async function pushText(to: string, text: string) {
@@ -37,14 +37,29 @@ async function pushText(to: string, text: string) {
   });
 }
 
+async function claude(system: string, user: string, maxTokens = 900): Promise<string | null> {
+  if (!ANTHROPIC_API_KEY) return null;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text?.trim() || null;
+  } catch (err) {
+    console.error("claude error:", err);
+    return null;
+  }
+}
+
 // ── 型 ────────────────────────────────────────────────
 type Memo = {
   id: string; type: string; title: string; counterparty: string | null; dueDate: string | null;
-  assignee: string | null; amount: number | null; nextAction: string | null;
+  assignee: string | null; amount: number | null; nextAction: string | null; priority?: string;
   createdBy: string; createdByName: string; createdAt: any; recurring?: boolean;
 };
 
-// ── メモ1件を1行に ─────────────────────────────────────
 function describe(m: Memo, today: string, withOwner: boolean): string {
   const parts = [m.title];
   if (withOwner) parts.push(`登録:${m.createdByName || "不明"}`);
@@ -54,12 +69,12 @@ function describe(m: Memo, today: string, withOwner: boolean): string {
     const d = daysBetween(today, m.dueDate);
     parts.push(d < 0 ? `期日:${m.dueDate}(${-d}日超過)` : d === 0 ? "期日:今日" : `期日:${m.dueDate}(あと${d}日)`);
   }
+  if (m.priority === "high") parts.push("優先度:高");
   if (m.amount != null) parts.push(`金額:${m.amount.toLocaleString()}円`);
   if (m.nextAction) parts.push(`次:${m.nextAction}`);
   return "- " + parts.join(" / ");
 }
 
-// ── メモ一覧を分類してテキスト化 ─────────────────────
 function buildFacts(memos: Memo[], today: string, withOwner: boolean): string {
   const overdue = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) < 0);
   const dueSoon = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) >= 0 && daysBetween(today, m.dueDate) <= 3);
@@ -72,32 +87,24 @@ function buildFacts(memos: Memo[], today: string, withOwner: boolean): string {
   const sec = (label: string, list: Memo[]) =>
     list.length ? `\n【${label}】\n${list.map((m) => describe(m, today, withOwner)).join("\n")}` : "";
   return [
-    `今日: ${today}`,
-    `未完了メモ: ${memos.length}件`,
-    sec("期日超過", overdue),
-    sec("3日以内", dueSoon),
-    sec("それ以降", later),
-    sec("期日なし", noDue),
-    sec("7日以上動きなし", stalled),
+    `今日: ${today}`, `未完了メモ: ${memos.length}件`,
+    sec("期日超過", overdue), sec("3日以内", dueSoon), sec("それ以降", later), sec("期日なし", noDue), sec("7日以上動きなし", stalled),
   ].filter(Boolean).join("\n");
 }
 
-// ── Claudeでブリーフィング文を生成（失敗時はfactsをそのまま返す）──
-async function writeBrief(facts: string, today: string, mode: "personal" | "overall", name: string): Promise<string> {
-  if (!ANTHROPIC_API_KEY) return facts;
-  const role =
-    mode === "personal"
-      ? `あなたは株式会社Athhaの社員「${name}」さん専属の業務アシスタントです。以下は${name}さんが関わる未完了業務メモの一覧です。`
-      : `あなたは株式会社Athhaの社長・${name}の右腕となる業務アシスタントです。以下は会社全体の未完了業務メモの一覧です（誰が登録したか・誰の担当かも含みます）。`;
-  const extra =
-    mode === "personal"
-      ? "- 最後に「今日やること」を1〜3個提案"
-      : "- 人ごとの偏りや、放置されている案件・期日遅れがあれば指摘する\n- 最後に「社長が今日確認・判断すべきこと」を1〜3個提案";
+async function writeBrief(facts: string, today: string, mode: "personal" | "overall", name: string, settings: UserSettings): Promise<string> {
+  const role = mode === "personal"
+    ? `以下は${name}さんが関わる未完了業務メモの一覧です。`
+    : `あなたは社長・${COMPANY.presidentName}の右腕でもあります。以下は会社全体の未完了業務メモの一覧です（誰が登録したか・誰の担当かも含みます）。`;
+  const extra = mode === "personal"
+    ? "- 最後に「今日やること」を1〜3個提案"
+    : "- 人ごとの偏りや、放置されている案件・期日遅れがあれば指摘する\n- 最後に「社長が今日確認・判断すべきこと」を1〜3個提案";
+  const system = `${personaFor(settings, name)}\n所属: ${COMPANY.name}（${COMPANY.business}）`;
   const prompt = `${role}
 これをもとに、朝のブリーフィングをLINEメッセージとして書いてください。
 
 【条件】
-- 冒頭は「おはようございます。${today}のブリーフィングです。」
+- 冒頭は挨拶と「${today}のブリーフィングです」
 - 優先順位：期日超過 → 今日・3日以内 → 停滞 → その他
 - 各項目は1行で簡潔に。担当者名と期日は必ず残す
 ${extra}
@@ -106,37 +113,25 @@ ${extra}
 
 【メモ一覧】
 ${facts}`;
-  try {
-    const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 900, messages: [{ role: "user", content: prompt }] }),
-    });
-    const aiData = await aiRes.json();
-    const text = aiData.content?.[0]?.text?.trim();
-    return text || facts;
-  } catch (err) {
-    console.error("AI brief error:", err);
-    return facts;
-  }
+  return (await claude(system, prompt)) || facts;
 }
 
 export default async function handler(req: any, res: any) {
-  // 認証：GitHub Actionsから LINE_CHANNEL_ACCESS_TOKEN をヘッダーで渡す
   const auth = req.headers["x-brief-token"];
-  if (!ACCESS_TOKEN || auth !== ACCESS_TOKEN) {
-    res.status(401).send("Unauthorized");
-    return;
-  }
+  if (!ACCESS_TOKEN || auth !== ACCESS_TOKEN) { res.status(401).send("Unauthorized"); return; }
 
   try {
+    const now = jstNow();
     const today = jstToday();
+    const hour = now.getUTCHours();
+    const dow = now.getUTCDay();
+    const force = req.query?.force === "1"; // テスト用：時刻・曜日を無視して全員に送る
 
     // 未完了メモ
     const snap = await db.collection("work_memos").where("status", "==", "open").get();
     const memos: Memo[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 
-    // LINE連携ユーザー（lineUserId → 名前 / uid、名前 → lineUserId）
+    // LINE連携ユーザー
     const lineSnap = await db.collection("lineUsers").get();
     const lineName: Record<string, string> = {};
     const lineUid: Record<string, string> = {};
@@ -149,11 +144,14 @@ export default async function handler(req: any, res: any) {
     });
 
     // admin（全体版の宛先）
-    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
-    const adminUids = new Set(adminsSnap.docs.map((d) => d.id));
-    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]) || ADMIN_NAMES.includes(lineName[id]));
+    const adminUids = new Set<string>();
+    for (const role of COMPANY.adminRoles) {
+      const s = await db.collection("users").where("role", "==", role).get();
+      s.docs.forEach((d) => adminUids.add(d.id));
+    }
+    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]) || COMPANY.adminNames.includes(lineName[id]));
 
-    // 個人版：登録者本人 ＋ 担当者名が一致する人 に振り分け
+    // 個人版の対象メモ（登録者本人＋担当者名が一致する人）
     const personal: Record<string, Memo[]> = {};
     for (const m of memos) {
       const targets = new Set<string>();
@@ -162,71 +160,60 @@ export default async function handler(req: any, res: any) {
       for (const t of targets) (personal[t] ||= []).push(m);
     }
 
+    // 直近3日の活動（声掛け判定用）
+    const since = new Date(Date.now() - 3 * 86400000);
+    const active = new Set<string>();
+    (await db.collection("work_memos").where("createdAt", ">=", since).get()).docs.forEach((d) => { const cb = d.data().createdBy; if (cb) active.add(cb); });
+    (await db.collection("consult_sessions").where("updatedAt", ">=", since).get()).docs.forEach((d) => active.add(d.id));
+    (await db.collection("nudges").where("createdAt", ">=", since).get()).docs.forEach((d) => active.add(d.data().lineUserId));
+
     const sentTo: string[] = [];
-
-    // 個人版を送信（adminは全体版を受け取るので個人版は送らない）
-    for (const lineId of Object.keys(personal)) {
-      if (adminLineIds.includes(lineId)) continue;
-      const name = lineName[lineId] || "あなた";
-      const facts = buildFacts(personal[lineId], today, false);
-      const brief = await writeBrief(facts, today, "personal", name);
-      await pushText(lineId, brief);
-      sentTo.push(name);
-    }
-
-    // 全体版をadminに送信
-    if (adminLineIds.length > 0) {
-      const overall = memos.length
-        ? await writeBrief(buildFacts(memos, today, true), today, "overall", lineName[adminLineIds[0]] || "社長")
-        : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。「メモ 〇〇」で送ってもらえれば、ここに載せていきます。`;
-      for (const lineId of adminLineIds) {
-        await pushText(lineId, overall);
-        sentTo.push(`${lineName[lineId]}(全体版)`);
-      }
-    }
-
-    // ── 声掛け：3日以上メモも相談も使っていない社員に、火・金だけ軽く声をかける ──
-    const dow = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay();
     const nudged: string[] = [];
-    if (dow === 2 || dow === 5) {
-      const since = new Date(Date.now() - 3 * 86400000);
-      const active = new Set<string>();
-      const recentMemos = await db.collection("work_memos").where("createdAt", ">=", since).get();
-      recentMemos.docs.forEach((d) => { const cb = d.data().createdBy; if (cb) active.add(cb); });
-      const sessions = await db.collection("consult_sessions").where("updatedAt", ">=", since).get();
-      sessions.docs.forEach((d) => active.add(d.id));
-      const recentNudges = await db.collection("nudges").where("createdAt", ">=", since).get();
-      recentNudges.docs.forEach((d) => active.add(d.data().lineUserId));
-      for (const lineId of Object.keys(lineName)) {
-        if (active.has(lineId) || personal[lineId] || adminLineIds.includes(lineId)) continue;
-        if ((lineUid[lineId] || "").startsWith("guest_")) continue;
-        const name = lineName[lineId];
-        let msg = `${name}さん、おはようございます。最近、気になっていることや抱えている予定はありませんか？\n仕事の相談でも予定のメモでも、このLINEにそのまま送ってもらえれば、記録したりアドバイスしたりします。`;
-        if (ANTHROPIC_API_KEY) {
-          try {
-            const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-              body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 200, messages: [{ role: "user", content: `あなたは株式会社Athha（携帯電話販売代理店）の社員「${name}」さんを支えるAIアシスタントです。ここ数日やり取りがない${name}さんに、LINEで軽く声をかけてください。押しつけがましくなく、返事しやすい一言にして、「予定のメモも仕事の相談も、このLINEにそのまま送ればいい」ことを自然に伝えてください。100字以内。絵文字なし。本文だけを返してください。` }] }),
-            });
-            const aiData = await aiRes.json();
-            const t = aiData.content?.[0]?.text?.trim();
-            if (t) msg = t;
-          } catch {}
-        }
-        await pushText(lineId, msg);
-        await db.collection("nudges").add({ lineUserId: lineId, name, message: msg, createdAt: new Date() });
-        nudged.push(name);
+
+    for (const lineId of Object.keys(lineName)) {
+      if ((lineUid[lineId] || "").startsWith("guest_")) continue;
+      const name = lineName[lineId];
+      const settings = await getSettings(lineId);
+      const isAdmin = adminLineIds.includes(lineId);
+      const itsTime = force || (settings.briefHour === hour && settings.briefDays.includes(dow));
+      if (!itsTime) continue;
+
+      if (isAdmin) {
+        // 全体版
+        const overall = memos.length
+          ? await writeBrief(buildFacts(memos, today, true), today, "overall", name, settings)
+          : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。予定や約束をこのLINEに送ってもらえれば、ここに載せていきます。`;
+        await pushText(lineId, overall);
+        sentTo.push(`${name}(全体版)`);
+        continue;
       }
+
+      if (personal[lineId]) {
+        // 個人版
+        const brief = await writeBrief(buildFacts(personal[lineId], today, false), today, "personal", name, settings);
+        await pushText(lineId, brief);
+        sentTo.push(name);
+        continue;
+      }
+
+      // 声掛け（メモがなく、3日以上動きがなく、本人の希望回数に合う曜日）
+      const nudgeToday = force || NUDGE_DAYS[settings.nudgePerWeek]?.includes(dow);
+      if (!nudgeToday || active.has(lineId)) continue;
+      const system = `${personaFor(settings, name)}\n所属: ${COMPANY.name}（${COMPANY.business}）`;
+      const msg = (await claude(system,
+        `ここ数日やり取りがない${name}さんに、LINEで軽く声をかけてください。押しつけがましくなく、返事しやすい一言にして、「予定のメモも仕事の相談も、このLINEにそのまま送ればいい」ことを自然に伝えてください。100字以内。絵文字なし。本文だけを返してください。`, 200))
+        || `${name}さん、おはようございます。最近、気になっていることや抱えている予定はありませんか？\n仕事の相談でも予定のメモでも、このLINEにそのまま送ってもらえれば、記録したりアドバイスしたりします。`;
+      await pushText(lineId, msg);
+      await db.collection("nudges").add({ lineUserId: lineId, name, message: msg, createdAt: new Date() });
+      nudged.push(name);
     }
 
-    await db.collection("morning_briefs").add({
-      date: today, memoCount: memos.length, sentTo, nudged, createdAt: new Date(),
-    });
-
-    res.status(200).json({ ok: true, date: today, memoCount: memos.length, sentTo, nudged });
+    if (sentTo.length || nudged.length) {
+      await db.collection("morning_briefs").add({ date: today, hour, memoCount: memos.length, sentTo, nudged, createdAt: new Date() });
+    }
+    res.status(200).json({ ok: true, date: today, hour, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
-    console.error("morning-brief error:", err);
+    console.error("scheduler error:", err);
     res.status(500).json({ ok: false, error: String(err) });
   }
 }
