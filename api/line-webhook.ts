@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "./work-memo";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(
@@ -23,6 +24,9 @@ const bucket = getStorage().bucket(STORAGE_BUCKET);
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+
+// ── 業務メモモードの接頭辞（「メモ 〇〇」「J 〇〇」など）
+const WORK_MEMO_PREFIX = /^(メモ|めも|memo|J)[\s　:：]+/i;
 
 // ── AI解析関数（キーワード解析で認識できない場合のフォールバック）
 async function parseWithAI(text: string): Promise<any | null> {
@@ -570,6 +574,62 @@ export default async function handler(req: any, res: any) {
         } else {
           await replyMessage(replyToken, "新しいお名前を「名前変更：田中太郎」の形式で送ってください。");
         }
+        continue;
+      }
+
+      // ── 業務メモモード（経理・営業のメモをAIで解析して記録）──
+      // ① 聞き返し中なら、その回答として処理
+      try {
+        if (await hasPendingMemo(lineUserId)) {
+          if (/^(やめる|キャンセル|取り消し|取消)$/.test(text)) {
+            await cancelPendingMemo(lineUserId);
+            await replyMessage(replyToken, "メモを取り消しました。");
+          } else {
+            await replyMessage(replyToken, await handleWorkMemo(text, lineUserId, displayName));
+          }
+          continue;
+        }
+        // ② 「メモ 〇〇」で始まるメッセージ
+        if (WORK_MEMO_PREFIX.test(text)) {
+          const memoText = text.replace(WORK_MEMO_PREFIX, "").trim();
+          if (!memoText) {
+            await replyMessage(replyToken, "メモの内容を続けて送ってください。\n\n例：メモ 来週A社に見積もり出す\n例：メモ 25日に事務所家賃の支払い");
+          } else {
+            await replyMessage(replyToken, await handleWorkMemo(memoText, lineUserId, displayName));
+          }
+          continue;
+        }
+      } catch (err) {
+        console.error("業務メモエラー:", err);
+        await replyMessage(replyToken, "メモの記録に失敗しました。もう一度送ってください。");
+        continue;
+      }
+
+      // ── 業務メモモード（経理・営業のメモをAIで解析して記録）──
+      // ① 聞き返し中なら、その回答として処理
+      try {
+        if (await hasPendingMemo(lineUserId)) {
+          if (/^(やめる|キャンセル|取り消し|取消)$/.test(text)) {
+            await cancelPendingMemo(lineUserId);
+            await replyMessage(replyToken, "メモを取り消しました。");
+          } else {
+            await replyMessage(replyToken, await handleWorkMemo(text, lineUserId, displayName));
+          }
+          continue;
+        }
+        // ② 「メモ 〇〇」で始まるメッセージ
+        if (WORK_MEMO_PREFIX.test(text)) {
+          const memoText = text.replace(WORK_MEMO_PREFIX, "").trim();
+          if (!memoText) {
+            await replyMessage(replyToken, "メモの内容を続けて送ってください。\n\n例：メモ 来週A社に見積もり出す\n例：メモ 25日に事務所家賃の支払い");
+          } else {
+            await replyMessage(replyToken, await handleWorkMemo(memoText, lineUserId, displayName));
+          }
+          continue;
+        }
+      } catch (err) {
+        console.error("業務メモエラー:", err);
+        await replyMessage(replyToken, "メモの記録に失敗しました。もう一度送ってください。");
         continue;
       }
 
