@@ -185,11 +185,46 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    // ── 声掛け：3日以上メモも相談も使っていない社員に、火・金だけ軽く声をかける ──
+    const dow = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay();
+    const nudged: string[] = [];
+    if (dow === 2 || dow === 5) {
+      const since = new Date(Date.now() - 3 * 86400000);
+      const active = new Set<string>();
+      const recentMemos = await db.collection("work_memos").where("createdAt", ">=", since).get();
+      recentMemos.docs.forEach((d) => { const cb = d.data().createdBy; if (cb) active.add(cb); });
+      const sessions = await db.collection("consult_sessions").where("updatedAt", ">=", since).get();
+      sessions.docs.forEach((d) => active.add(d.id));
+      const recentNudges = await db.collection("nudges").where("createdAt", ">=", since).get();
+      recentNudges.docs.forEach((d) => active.add(d.data().lineUserId));
+      for (const lineId of Object.keys(lineName)) {
+        if (active.has(lineId) || personal[lineId] || adminLineIds.includes(lineId)) continue;
+        if ((lineUid[lineId] || "").startsWith("guest_")) continue;
+        const name = lineName[lineId];
+        let msg = `${name}さん、おはようございます。最近、気になっていることや抱えている予定はありませんか？\n仕事の相談でも予定のメモでも、このLINEにそのまま送ってもらえれば、記録したりアドバイスしたりします。`;
+        if (ANTHROPIC_API_KEY) {
+          try {
+            const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+              body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 200, messages: [{ role: "user", content: `あなたは株式会社Athha（携帯電話販売代理店）の社員「${name}」さんを支えるAIアシスタントです。ここ数日やり取りがない${name}さんに、LINEで軽く声をかけてください。押しつけがましくなく、返事しやすい一言にして、「予定のメモも仕事の相談も、このLINEにそのまま送ればいい」ことを自然に伝えてください。100字以内。絵文字なし。本文だけを返してください。` }] }),
+            });
+            const aiData = await aiRes.json();
+            const t = aiData.content?.[0]?.text?.trim();
+            if (t) msg = t;
+          } catch {}
+        }
+        await pushText(lineId, msg);
+        await db.collection("nudges").add({ lineUserId: lineId, name, message: msg, createdAt: new Date() });
+        nudged.push(name);
+      }
+    }
+
     await db.collection("morning_briefs").add({
-      date: today, memoCount: memos.length, sentTo, createdAt: new Date(),
+      date: today, memoCount: memos.length, sentTo, nudged, createdAt: new Date(),
     });
 
-    res.status(200).json({ ok: true, date: today, memoCount: memos.length, sentTo });
+    res.status(200).json({ ok: true, date: today, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
     console.error("morning-brief error:", err);
     res.status(500).json({ ok: false, error: String(err) });
