@@ -123,16 +123,20 @@ ${facts}`;
       }
     }
 
-    // 送信先：role が manager のユーザーのLINE
-    const managersSnap = await db.collection("users").where("role", "==", "manager").get();
-    const managerUids = managersSnap.docs.map((d) => d.id);
+    // 送信先：業務メモを送っている人（memo の createdBy = LINE userId）＋ role が admin のユーザー
+    const recipientLineIds = new Set<string>();
+    memos.forEach((m: any) => { if (m.createdBy) recipientLineIds.add(m.createdBy); });
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    const adminUids = adminsSnap.docs.map((d) => d.id);
+    if (adminUids.length > 0) {
+      const lineSnap = await db.collection("lineUsers").where("uid", "in", adminUids.slice(0, 10)).get();
+      lineSnap.docs.forEach((d) => recipientLineIds.add(d.id));
+    }
     const sentTo: string[] = [];
-    if (managerUids.length > 0) {
-      const lineSnap = await db.collection("lineUsers").where("uid", "in", managerUids.slice(0, 10)).get();
-      for (const doc of lineSnap.docs) {
-        await pushText(doc.id, brief);
-        sentTo.push(doc.data().displayName || doc.id);
-      }
+    for (const lineId of recipientLineIds) {
+      await pushText(lineId, brief);
+      const ln = await db.collection("lineUsers").doc(lineId).get();
+      sentTo.push(ln.exists ? (ln.data()!.displayName || lineId) : lineId);
     }
 
     // 記録
