@@ -8,7 +8,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "./work-memo";
-import { classifyIntent, handleConsult, hasActiveConsult } from "./consult";
+import { handleFreeText } from "./assistant";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(
@@ -1330,18 +1330,16 @@ ${content}
 
       // ── 件数報告として解析（AI優先）────────────────────
       const { date, cleanText } = extractDateFromText(text);
-      // ── 自由文の意図判定：件数報告でなければ、業務メモ or 相談として返す ──
-      const intent = await classifyIntent(text, await hasActiveConsult(lineUserId));
-      if (intent !== "report") {
-        try {
-          const answer = intent === "memo"
-            ? await handleWorkMemo(text, lineUserId, displayName)
-            : await handleConsult(text, lineUserId, displayName, uid);
-          await replyMessage(replyToken, answer);
-        } catch (err) {
-          console.error("自由文処理エラー:", err);
-          await replyMessage(replyToken, "うまく処理できませんでした。もう一度送ってください。");
+      // ── 自由文はアシスタント（啓吾くん）へ：設定・メモ・相談を処理。件数報告なら下の解析へ ──
+      try {
+        const fr = await handleFreeText(text, lineUserId, displayName, uid);
+        if (!fr.isReport) {
+          await replyMessage(replyToken, fr.reply || "うまく処理できませんでした。もう一度送ってください。");
+          continue;
         }
+      } catch (err) {
+        console.error("アシスタント処理エラー:", err);
+        await replyMessage(replyToken, "うまく処理できませんでした。もう一度送ってください。");
         continue;
       }
       // まずAI解析を試みる
