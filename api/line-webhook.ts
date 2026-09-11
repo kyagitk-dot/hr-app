@@ -7,8 +7,8 @@ import crypto from "crypto";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
-import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "./work-memo";
-import { handleFreeText } from "./assistant";
+import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "../lib/work-memo";
+import { handleFreeText } from "../lib/assistant";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(
