@@ -17,6 +17,9 @@ const db = getFirestore();
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
+// 全体版ブリーフィングを受け取る人（LINE連携時の表示名）。role が admin のユーザーにも届く
+const ADMIN_NAMES = ["八木幸平"];
+
 // ── 日付ユーティリティ（JST）──────────────────────────
 function jstToday(): string {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -148,7 +151,7 @@ export default async function handler(req: any, res: any) {
     // admin（全体版の宛先）
     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
     const adminUids = new Set(adminsSnap.docs.map((d) => d.id));
-    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]));
+    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]) || ADMIN_NAMES.includes(lineName[id]));
 
     // 個人版：登録者本人 ＋ 担当者名が一致する人 に振り分け
     const personal: Record<string, Memo[]> = {};
