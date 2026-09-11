@@ -2,7 +2,8 @@
 // LINEで来た「コマンドでも定型でもない文章」の入口。
 //   1. 設定の変更（「7時にして」「声掛けいらない」）
 //   2. 初回の設定ヒアリングへの回答
-//   3. 件数報告 / 業務メモ / 相談 の判定と振り分け
+//   3. 仮の予定への返事（了解／変更／断り）
+//   4. 件数報告 / 業務メモ / 予定照会 / 完了 / 実績 / 相談 の判定と振り分け
 // を担当し、返信文を返す。件数報告なら isReport=true を返して既存の報告フローに渡す。
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -10,6 +11,7 @@ import { classifyIntent, handleConsult, hasActiveConsult } from './consult';
 import { handleWorkMemo } from './work-memo';
 import { getSettings, saveSettings, parseSettingsFromText, onboardingQuestion, describeSettings } from './user-settings';
 import { ASSISTANT } from './assistant-config';
+import { handlePendingReply, querySchedules, completeMemo, myStats } from './tools';
 
 const ONBOARD_PENDING = 'assistant_onboarding'; // ヒアリング回答待ち
 
@@ -47,9 +49,16 @@ export async function handleFreeText(
     }
   }
 
+  // 他人から入れられた仮の予定への返事（了解／変更／断り）
+  const pendingReply = await handlePendingReply(text, lineUserId, userName);
+  if (pendingReply) return { reply: pendingReply, isReport: false };
+
   // 意図判定 → 振り分け
   const intent = await classifyIntent(text, await hasActiveConsult(lineUserId));
   if (intent === 'report') return { reply: null, isReport: true };
+  if (intent === 'schedule') return { reply: await querySchedules(text, userName), isReport: false };
+  if (intent === 'done') return { reply: await completeMemo(text, lineUserId, userName), isReport: false };
+  if (intent === 'stats') return { reply: await myStats(text, uid, userName), isReport: false };
 
   let reply = intent === 'memo'
     ? await handleWorkMemo(text, lineUserId, userName)
