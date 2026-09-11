@@ -5,6 +5,7 @@
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { COMPANY, ASSISTANT } from './assistant-config';
+import { notifyAssignee } from './tools';
 
 // ── 設定 ─────────────────────────────────────────────
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
@@ -166,7 +167,7 @@ export async function handleWorkMemo(text: string, userId: string, userName: str
   }
 
   // 保存
-  await db.collection(COLLECTION).add({
+  const saved = await db.collection(COLLECTION).add({
     ...memo,
     question: null,
     status: 'open',
@@ -178,7 +179,10 @@ export async function handleWorkMemo(text: string, userId: string, userName: str
   });
   if (pendingSnap.exists) await pendingRef.delete();
 
-  return formatSaved(memo);
+  // 担当者が別の社員なら、仮の予定として本人に通知（了解で確定）
+  let note: string | null = null;
+  try { note = await notifyAssignee(saved.id, memo, userId, userName); } catch (err) { console.error('notifyAssignee error:', err); }
+  return formatSaved(memo) + (note ? `\n\n📨 ${note}` : '');
 }
 
 /** 保留中の聞き返しを取り消す（ユーザーが「やめる」「キャンセル」と送ったとき用） */
