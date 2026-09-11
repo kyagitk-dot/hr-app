@@ -4,6 +4,7 @@
 // line-webhook.ts から handleWorkMemo() を呼び出して使う
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { COMPANY, ASSISTANT } from './assistant-config';
 
 // ── 設定 ─────────────────────────────────────────────
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
@@ -42,7 +43,7 @@ async function parseMemo(
   const weekday = ['日', '月', '火', '水', '木', '金', '土'][jst.getUTCDay()];
   const canAsk = round < MAX_ROUNDS;
 
-  const system = `あなたは株式会社Athha（携帯電話販売代理店）の社長・八木幸平の右腕となる、経験豊富な業務アシスタントです。
+  const system = `あなたは「${ASSISTANT.name}」。${COMPANY.name}（${COMPANY.business}）の社長・${COMPANY.presidentName}の右腕となる、経験豊富な業務アシスタントです。
 社員がLINEで送ってきた経理・営業に関するメモを受け取り、構造化して記録します。
 今日は ${today}（${weekday}）です。送信者は「${senderName}」です。
 
