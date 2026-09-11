@@ -1,6 +1,8 @@
 // api/morning-brief.ts
-// 毎朝のブリーフィング — work_memos（業務メモ）を読み、期日が近いもの・停滞しているものを
-// Claudeでまとめて、管理者(manager)のLINEにプッシュする。
+// 毎朝のブリーフィング — work_memos（業務メモ）を読み、
+//   ・社員それぞれに「自分のメモだけ」のブリーフィング
+//   ・admin には全員分をまとめた全体版
+// を Claude で作って LINE にプッシュする。
 // GitHub Actions (.github/workflows/morning-brief.yml) から毎朝8時(JST)に叩かれる。
 
 import { initializeApp, getApps, cert } from "firebase-admin/app";
@@ -32,15 +34,17 @@ async function pushText(to: string, text: string) {
   });
 }
 
-// ── メモを分類 ────────────────────────────────────────
+// ── 型 ────────────────────────────────────────────────
 type Memo = {
   id: string; type: string; title: string; counterparty: string | null; dueDate: string | null;
   assignee: string | null; amount: number | null; nextAction: string | null;
-  createdByName: string; createdAt: any; recurring?: boolean;
+  createdBy: string; createdByName: string; createdAt: any; recurring?: boolean;
 };
 
-function describe(m: Memo, today: string): string {
+// ── メモ1件を1行に ─────────────────────────────────────
+function describe(m: Memo, today: string, withOwner: boolean): string {
   const parts = [m.title];
+  if (withOwner) parts.push(`登録:${m.createdByName || "不明"}`);
   if (m.counterparty) parts.push(`相手:${m.counterparty}`);
   if (m.assignee) parts.push(`担当:${m.assignee}`);
   if (m.dueDate) {
@@ -52,8 +56,70 @@ function describe(m: Memo, today: string): string {
   return "- " + parts.join(" / ");
 }
 
+// ── メモ一覧を分類してテキスト化 ─────────────────────
+function buildFacts(memos: Memo[], today: string, withOwner: boolean): string {
+  const overdue = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) < 0);
+  const dueSoon = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) >= 0 && daysBetween(today, m.dueDate) <= 3);
+  const later = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) > 3);
+  const noDue = memos.filter((m) => !m.dueDate);
+  const stalled = noDue.filter((m) => {
+    const created = m.createdAt?.toDate ? m.createdAt.toDate() : null;
+    return created && daysBetween(created.toISOString().slice(0, 10), today) >= 7;
+  });
+  const sec = (label: string, list: Memo[]) =>
+    list.length ? `\n【${label}】\n${list.map((m) => describe(m, today, withOwner)).join("\n")}` : "";
+  return [
+    `今日: ${today}`,
+    `未完了メモ: ${memos.length}件`,
+    sec("期日超過", overdue),
+    sec("3日以内", dueSoon),
+    sec("それ以降", later),
+    sec("期日なし", noDue),
+    sec("7日以上動きなし", stalled),
+  ].filter(Boolean).join("\n");
+}
+
+// ── Claudeでブリーフィング文を生成（失敗時はfactsをそのまま返す）──
+async function writeBrief(facts: string, today: string, mode: "personal" | "overall", name: string): Promise<string> {
+  if (!ANTHROPIC_API_KEY) return facts;
+  const role =
+    mode === "personal"
+      ? `あなたは株式会社Athhaの社員「${name}」さん専属の業務アシスタントです。以下は${name}さんが関わる未完了業務メモの一覧です。`
+      : `あなたは株式会社Athhaの社長・${name}の右腕となる業務アシスタントです。以下は会社全体の未完了業務メモの一覧です（誰が登録したか・誰の担当かも含みます）。`;
+  const extra =
+    mode === "personal"
+      ? "- 最後に「今日やること」を1〜3個提案"
+      : "- 人ごとの偏りや、放置されている案件・期日遅れがあれば指摘する\n- 最後に「社長が今日確認・判断すべきこと」を1〜3個提案";
+  const prompt = `${role}
+これをもとに、朝のブリーフィングをLINEメッセージとして書いてください。
+
+【条件】
+- 冒頭は「おはようございます。${today}のブリーフィングです。」
+- 優先順位：期日超過 → 今日・3日以内 → 停滞 → その他
+- 各項目は1行で簡潔に。担当者名と期日は必ず残す
+${extra}
+- 全体で${mode === "personal" ? "300" : "500"}字以内。絵文字は最小限。Markdown記法は使わない
+- 事実にないことは書かない
+
+【メモ一覧】
+${facts}`;
+  try {
+    const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 900, messages: [{ role: "user", content: prompt }] }),
+    });
+    const aiData = await aiRes.json();
+    const text = aiData.content?.[0]?.text?.trim();
+    return text || facts;
+  } catch (err) {
+    console.error("AI brief error:", err);
+    return facts;
+  }
+}
+
 export default async function handler(req: any, res: any) {
-  // 認証：GitHub Actionsから LINE_CHANNEL_ACCESS_TOKEN をヘッダーで渡す（新しいシークレット不要）
+  // 認証：GitHub Actionsから LINE_CHANNEL_ACCESS_TOKEN をヘッダーで渡す
   const auth = req.headers["x-brief-token"];
   if (!ACCESS_TOKEN || auth !== ACCESS_TOKEN) {
     res.status(401).send("Unauthorized");
@@ -63,87 +129,61 @@ export default async function handler(req: any, res: any) {
   try {
     const today = jstToday();
 
-    // 未完了メモを取得
+    // 未完了メモ
     const snap = await db.collection("work_memos").where("status", "==", "open").get();
     const memos: Memo[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 
-    // 分類
-    const overdue = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) < 0);
-    const dueSoon = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) >= 0 && daysBetween(today, m.dueDate) <= 3);
-    const later = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) > 3);
-    const noDue = memos.filter((m) => !m.dueDate);
-    const stalled = noDue.filter((m) => {
-      const created = m.createdAt?.toDate ? m.createdAt.toDate() : null;
-      return created && daysBetween(created.toISOString().slice(0, 10), today) >= 7;
+    // LINE連携ユーザー（lineUserId → 名前 / uid、名前 → lineUserId）
+    const lineSnap = await db.collection("lineUsers").get();
+    const lineName: Record<string, string> = {};
+    const lineUid: Record<string, string> = {};
+    const nameToLine: Record<string, string> = {};
+    lineSnap.docs.forEach((d) => {
+      const data = d.data();
+      lineName[d.id] = data.displayName || d.id;
+      lineUid[d.id] = data.uid || "";
+      if (data.displayName) nameToLine[data.displayName] = d.id;
     });
 
-    // ブリーフィング本文
-    let brief: string;
-    if (memos.length === 0) {
-      brief = `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。「メモ 〇〇」で送ってもらえれば、ここに載せていきます。`;
-    } else {
-      const facts = [
-        `今日: ${today}`,
-        `未完了メモ: ${memos.length}件`,
-        overdue.length ? `\n【期日超過】\n${overdue.map((m) => describe(m, today)).join("\n")}` : "",
-        dueSoon.length ? `\n【3日以内】\n${dueSoon.map((m) => describe(m, today)).join("\n")}` : "",
-        later.length ? `\n【それ以降】\n${later.map((m) => describe(m, today)).join("\n")}` : "",
-        noDue.length ? `\n【期日なし】\n${noDue.map((m) => describe(m, today)).join("\n")}` : "",
-        stalled.length ? `\n【7日以上動きなし】\n${stalled.map((m) => describe(m, today)).join("\n")}` : "",
-      ].filter(Boolean).join("\n");
+    // admin（全体版の宛先）
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    const adminUids = new Set(adminsSnap.docs.map((d) => d.id));
+    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]));
 
-      brief = facts; // AIが使えないときのフォールバック
+    // 個人版：登録者本人 ＋ 担当者名が一致する人 に振り分け
+    const personal: Record<string, Memo[]> = {};
+    for (const m of memos) {
+      const targets = new Set<string>();
+      if (m.createdBy) targets.add(m.createdBy);
+      if (m.assignee && nameToLine[m.assignee]) targets.add(nameToLine[m.assignee]);
+      for (const t of targets) (personal[t] ||= []).push(m);
+    }
 
-      if (ANTHROPIC_API_KEY) {
-        try {
-          const prompt = `あなたは株式会社Athhaの社長・八木幸平の右腕となる業務アシスタントです。
-以下は今日時点の未完了業務メモの一覧です。これをもとに、朝のブリーフィングをLINEメッセージとして書いてください。
+    const sentTo: string[] = [];
 
-【条件】
-- 冒頭は「おはようございます。${today}のブリーフィングです。」
-- 優先順位：期日超過 → 今日・3日以内 → 停滞 → その他
-- 各項目は1行で簡潔に。担当者名と期日は必ず残す
-- 最後に「今日やるべきことトップ3」を提案（データが少なければ1〜2個でよい）
-- 全体で400字以内。絵文字は最小限（見出しに1つ程度）。Markdown記法は使わない
-- 事実にないことは書かない
+    // 個人版を送信（adminは全体版を受け取るので個人版は送らない）
+    for (const lineId of Object.keys(personal)) {
+      if (adminLineIds.includes(lineId)) continue;
+      const name = lineName[lineId] || "あなた";
+      const facts = buildFacts(personal[lineId], today, false);
+      const brief = await writeBrief(facts, today, "personal", name);
+      await pushText(lineId, brief);
+      sentTo.push(name);
+    }
 
-【メモ一覧】
-${facts}`;
-          const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 800, messages: [{ role: "user", content: prompt }] }),
-          });
-          const aiData = await aiRes.json();
-          const text = aiData.content?.[0]?.text?.trim();
-          if (text) brief = text;
-        } catch (err) {
-          console.error("AI brief error:", err);
-        }
+    // 全体版をadminに送信
+    if (adminLineIds.length > 0) {
+      const overall = memos.length
+        ? await writeBrief(buildFacts(memos, today, true), today, "overall", lineName[adminLineIds[0]] || "社長")
+        : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。「メモ 〇〇」で送ってもらえれば、ここに載せていきます。`;
+      for (const lineId of adminLineIds) {
+        await pushText(lineId, overall);
+        sentTo.push(`${lineName[lineId]}(全体版)`);
       }
     }
 
-    // 送信先：業務メモを送っている人（memo の createdBy = LINE userId）＋ role が admin のユーザー
-    const recipientLineIds = new Set<string>();
-    memos.forEach((m: any) => { if (m.createdBy) recipientLineIds.add(m.createdBy); });
-    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
-    const adminUids = adminsSnap.docs.map((d) => d.id);
-    if (adminUids.length > 0) {
-      const lineSnap = await db.collection("lineUsers").where("uid", "in", adminUids.slice(0, 10)).get();
-      lineSnap.docs.forEach((d) => recipientLineIds.add(d.id));
-    }
-    const sentTo: string[] = [];
-    for (const lineId of recipientLineIds) {
-      await pushText(lineId, brief);
-      const ln = await db.collection("lineUsers").doc(lineId).get();
-      sentTo.push(ln.exists ? (ln.data()!.displayName || lineId) : lineId);
-    }
-
-    // 記録
     await db.collection("morning_briefs").add({
-      date: today, brief, memoCount: memos.length,
-      overdue: overdue.length, dueSoon: dueSoon.length, stalled: stalled.length,
-      sentTo, createdAt: new Date(),
+      date: today, memoCount: memos.length, sentTo, createdAt: new Date(),
     });
 
     res.status(200).json({ ok: true, date: today, memoCount: memos.length, sentTo });
