@@ -7,8 +7,8 @@
 
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { COMPANY, ASSISTANT } from "./assistant-config";
-import { getSettings, personaFor, UserSettings } from "./user-settings";
+import { COMPANY, ASSISTANT } from "../lib/assistant-config";
+import { getSettings, personaFor, UserSettings } from "../lib/user-settings";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}");
