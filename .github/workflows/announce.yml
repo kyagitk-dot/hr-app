@@ -1,0 +1,94 @@
+name: Announce to Employees
+
+on:
+  workflow_dispatch: # 手動実行のみ（社員だけに一斉送信。文面は下の MESSAGE を書き換える）
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push announcement to employees (guests excluded)
+        env:
+          LINE_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          cat > message.txt << 'MSG'
+          【お知らせ】このLINEに「啓吾くん」が加わりました
+
+          件数報告のLINEが、みなさん一人ひとりのお手伝いAIになりました。名前は「啓吾くん」です。
+
+          ■ できること（すべてこのLINEにふつうに送るだけ）
+          ・予定や約束を記録
+          　例：「来週水曜B社と打ち合わせ」「25日に○○の支払い」
+          ・他の人に予定を入れる
+          　例：「田中さんに来週火曜○○店の応援入れといて」→本人に届き、「了解」で確定
+          ・予定を見る
+          　例：「今週の予定は？」「みんなの来週の予定」
+          ・終わったら報告
+          　例：「A社の件終わった」
+          ・自分の実績を確認
+          　例：「今月の実績は？」
+          ・仕事の相談・質問
+          　例：「お客様に料金が高いと言われたらどう返す？」
+          　→相談の内容は本人と啓吾くんの間だけで、社長には見えません（トラブルなど本当に必要なときだけ要点が届きます）
+
+          件数報告は今まで通り「新規3件」のように送ってください。啓吾くんが内容を見て判断します。
+
+          ■ 毎朝のまとめ
+          自分の予定ややることを、毎朝まとめて送ってくれます。たまに啓吾くんから声をかけることもあるので、気軽に返してください。
+
+          ■ まずやってほしいこと
+          何でもいいので、一度啓吾くんに話しかけてください（予定1つでも、質問1つでも）。そのあとに啓吾くんが「呼び方・口調・まとめの時間・声掛けの頻度」を聞いてくるので、好きなように答えてください。あとから「口調フランクにして」「まとめは7時に」でいつでも変えられます。「設定」と送ると今の設定が見られます。
+          MSG
+          node << 'EOF'
+          const https = require('https');
+          const crypto = require('crypto');
+          const fs = require('fs');
+          const message = fs.readFileSync('message.txt', 'utf8').replace(/^ {10}/gm, '').trim();
+          const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+          const projectId = sa.project_id;
+          function token() {
+            const now = Math.floor(Date.now() / 1000);
+            const h = Buffer.from(JSON.stringify({alg:'RS256',typ:'JWT'})).toString('base64url');
+            const p = Buffer.from(JSON.stringify({iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore', aud: 'https://oauth2.googleapis.com/token', exp: now + 3600, iat: now})).toString('base64url');
+            const s = crypto.createSign('RSA-SHA256'); s.update(`${h}.${p}`);
+            const jwt = `${h}.${p}.${s.sign(sa.private_key, 'base64url')}`;
+            return new Promise((res, rej) => {
+              const data = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+              const r = https.request({hostname:'oauth2.googleapis.com', path:'/token', method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':data.length}}, x => { let b=''; x.on('data', d => b += d); x.on('end', () => res(JSON.parse(b).access_token)); });
+              r.on('error', rej); r.write(data); r.end();
+            });
+          }
+          function get(t, path) {
+            return new Promise((res, rej) => {
+              const r = https.request({hostname:'firestore.googleapis.com', path, method:'GET', headers:{Authorization:`Bearer ${t}`}}, x => { let b=''; x.on('data', d => b += d); x.on('end', () => res(JSON.parse(b))); });
+              r.on('error', rej); r.end();
+            });
+          }
+          function push(to, text) {
+            return new Promise((res) => {
+              const body = JSON.stringify({to, messages:[{type:'text', text}]});
+              const r = https.request({hostname:'api.line.me', path:'/v2/bot/message/push', method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${process.env.LINE_ACCESS_TOKEN}`, 'Content-Length': Buffer.byteLength(body)}}, x => { let b=''; x.on('data', d => b += d); x.on('end', () => { console.log(`push ${x.statusCode}`); res(); }); });
+              r.on('error', res); r.write(body); r.end();
+            });
+          }
+          (async () => {
+            const t = await token();
+            let pageToken = ''; const targets = [];
+            do {
+              const d = await get(t, `/v1/projects/${projectId}/databases/(default)/documents/lineUsers?pageSize=300${pageToken ? '&pageToken=' + pageToken : ''}`);
+              for (const doc of (d.documents || [])) {
+                const f = doc.fields || {};
+                const isGuest = f.isGuest && f.isGuest.booleanValue === true;
+                const uid = f.uid && f.uid.stringValue || '';
+                const name = f.displayName && f.displayName.stringValue || '';
+                if (isGuest || uid.startsWith('guest_')) continue;
+                targets.push({ id: doc.name.split('/').pop(), name });
+              }
+              pageToken = d.nextPageToken || '';
+            } while (pageToken);
+            console.log('targets:', targets.map(x => x.name).join(', '));
+            for (const x of targets) await push(x.id, message);
+            console.log(`sent to ${targets.length} employees`);
+          })();
+          EOF
