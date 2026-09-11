@@ -565,6 +565,8 @@ export default async function handler(req: any, res: any) {
       const linkData = linkSnap.data()!;
       const uid = linkData.uid;
       const displayName = linkData.displayName;
+      // 業務委託（取引先）は件数報告のみ。アシスタント機能（メモ・相談・予定）は社員だけ
+      const isGuestUser = !!linkData.isGuest || String(uid || "").startsWith("guest_");
 
       // 名前変更対応
       if (text === "名前変更" || text.startsWith("名前変更：") || text.startsWith("名前変更:")) {
@@ -581,7 +583,7 @@ export default async function handler(req: any, res: any) {
       // ── 業務メモモード（経理・営業のメモをAIで解析して記録）──
       // ① 聞き返し中なら、その回答として処理
       try {
-        if (await hasPendingMemo(lineUserId)) {
+        if (!isGuestUser && await hasPendingMemo(lineUserId)) {
           if (/^(やめる|キャンセル|取り消し|取消)$/.test(text)) {
             await cancelPendingMemo(lineUserId);
             await replyMessage(replyToken, "メモを取り消しました。");
@@ -591,7 +593,7 @@ export default async function handler(req: any, res: any) {
           continue;
         }
         // ② 「メモ 〇〇」で始まるメッセージ
-        if (WORK_MEMO_PREFIX.test(text)) {
+        if (!isGuestUser && WORK_MEMO_PREFIX.test(text)) {
           const memoText = text.replace(WORK_MEMO_PREFIX, "").trim();
           if (!memoText) {
             await replyMessage(replyToken, "メモの内容を続けて送ってください。\n\n例：メモ 来週A社に見積もり出す\n例：メモ 25日に事務所家賃の支払い");
@@ -1332,7 +1334,7 @@ ${content}
       const { date, cleanText } = extractDateFromText(text);
       // ── 自由文はアシスタント（啓吾くん）へ：設定・メモ・相談を処理。件数報告なら下の解析へ ──
       try {
-        const fr = await handleFreeText(text, lineUserId, displayName, uid);
+        const fr = isGuestUser ? { reply: null, isReport: true } : await handleFreeText(text, lineUserId, displayName, uid);
         if (!fr.isReport) {
           await replyMessage(replyToken, fr.reply || "うまく処理できませんでした。もう一度送ってください。");
           continue;
