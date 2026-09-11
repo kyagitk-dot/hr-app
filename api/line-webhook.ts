@@ -8,6 +8,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "./work-memo";
+import { classifyIntent, handleConsult, hasActiveConsult } from "./consult";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(
@@ -683,7 +684,7 @@ ${content}
       }
 
       // ── リッチメニュー：フォーマットを見る ─────────────
-      if (text.includes("フォーマット")) {
+      if (text.includes("フォーマット") && text.length <= 12) {
         await replyMessage(
           replyToken,
           "【報告の書き方】\n\n店舗名＋キャリア名＋件数を自由な文章で送ってください。\n\n例：\n〇〇店でdocomo新規3件、ネット回線1件\n\n複数キャリアを送りたい場合は、メッセージを分けて送ってください。"
@@ -745,7 +746,7 @@ ${content}
       }
 
       // ── 目標設定 ────────────────────────────────────────
-      if (text.includes("目標")) {
+      if (text.includes("目標") && /[0-9０-９]/.test(text) && text.length <= 40) {
         const date = todayStr();
         const goalEntry: Record<string, number> = {};
         for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) {
@@ -766,7 +767,7 @@ ${content}
       }
 
       // ── リッチメニュー：ランキングを見る ───────────────
-      if (text.includes("ランキング")) {
+      if (text.includes("ランキング") && text.length <= 12) {
         const date = todayStr();
         // 今日の実績を取得
         const repSnap = await db.collectionGroup("daily").get();
@@ -810,7 +811,7 @@ ${content}
       }
 
       // ── リッチメニュー：今日の報告を修正 ───────────────
-      if (text.includes("修正して") || text === "修正") {
+      if (text === "修正して" || text === "修正") {
         if (text.includes("修正して")) {
           // 今日のデータを削除して入力し直せるようにする
           const date = todayStr();
@@ -835,7 +836,7 @@ ${content}
       }
 
       // ── リッチメニュー：未入力か確認 ───────────────────
-      if (text.includes("未入力")) {
+      if (text.includes("未入力") && text.length <= 10) {
         const date = todayStr();
         const repSnap = await db
           .collection("salesReports")
@@ -1228,7 +1229,7 @@ ${content}
       }
 
       // ── 旧コマンド互換（実績／今日）─────────────────────
-      if (text.includes("実績") || text.includes("今日")) {
+      if (/^(今日|本日)?の?実績(を?(教えて|見せて))?$/.test(text) || text === "今日" || text === "本日") {
         const date = todayStr();
         const repSnap = await db
           .collection("salesReports")
@@ -1329,6 +1330,20 @@ ${content}
 
       // ── 件数報告として解析（AI優先）────────────────────
       const { date, cleanText } = extractDateFromText(text);
+      // ── 自由文の意図判定：件数報告でなければ、業務メモ or 相談として返す ──
+      const intent = await classifyIntent(text, await hasActiveConsult(lineUserId));
+      if (intent !== "report") {
+        try {
+          const answer = intent === "memo"
+            ? await handleWorkMemo(text, lineUserId, displayName)
+            : await handleConsult(text, lineUserId, displayName, uid);
+          await replyMessage(replyToken, answer);
+        } catch (err) {
+          console.error("自由文処理エラー:", err);
+          await replyMessage(replyToken, "うまく処理できませんでした。もう一度送ってください。");
+        }
+        continue;
+      }
       // まずAI解析を試みる
       let parsed = await parseWithAI(text);
       // AI失敗時のみキーワード解析にフォールバック
