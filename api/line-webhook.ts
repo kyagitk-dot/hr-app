@@ -592,8 +592,11 @@ export default async function handler(req: any, res: any) {
           if (/^(やめる|キャンセル|取り消し|取消)$/.test(text)) {
             await cancelPendingMemo(lineUserId);
             await replyMessage(replyToken, "メモを取り消しました。");
+            await logChat({ lineUserId, userName: displayName, text, intent: "memo_cancel", reply: "メモを取り消しました。" });
           } else {
-            await replyMessage(replyToken, await handleWorkMemo(text, lineUserId, displayName));
+            const memoReply = await handleWorkMemo(text, lineUserId, displayName);
+            await replyMessage(replyToken, memoReply);
+            await logChat({ lineUserId, userName: displayName, text, intent: "memo_pending_reply", reply: memoReply });
           }
           continue;
         }
@@ -601,9 +604,13 @@ export default async function handler(req: any, res: any) {
         if (!isGuestUser && WORK_MEMO_PREFIX.test(text)) {
           const memoText = text.replace(WORK_MEMO_PREFIX, "").trim();
           if (!memoText) {
-            await replyMessage(replyToken, "メモの内容を続けて送ってください。\n\n例：メモ 来週A社に見積もり出す\n例：メモ 25日に事務所家賃の支払い");
+            const askMsg = "メモの内容を続けて送ってください。\n\n例：メモ 来週A社に見積もり出す\n例：メモ 25日に事務所家賃の支払い";
+            await replyMessage(replyToken, askMsg);
+            await logChat({ lineUserId, userName: displayName, text, intent: "memo_prefix_empty", reply: askMsg });
           } else {
-            await replyMessage(replyToken, await handleWorkMemo(memoText, lineUserId, displayName));
+            const memoReply2 = await handleWorkMemo(memoText, lineUserId, displayName);
+            await replyMessage(replyToken, memoReply2);
+            await logChat({ lineUserId, userName: displayName, text, intent: "memo", reply: memoReply2 });
           }
           continue;
         }
