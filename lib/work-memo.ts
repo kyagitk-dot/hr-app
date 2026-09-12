@@ -9,7 +9,7 @@ import { notifyAssignee } from './tools';
 
 // ── 設定 ─────────────────────────────────────────────
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
-const MODEL = 'claude-haiku-4-5';
+const MODEL = 'claude-sonnet-5'; // メモ解析だけ精度重視でSonnet（相談・判定はHaikuのまま）
 const COLLECTION = 'work_memos';                 // 記録先
 const PENDING_COLLECTION = 'work_memo_pending';  // 聞き返し中の一時保存
 const MAX_ROUNDS = 2;                            // 聞き返しの最大回数
@@ -87,7 +87,18 @@ async function parseMemo(
 - 経理系（支払い・請求・入金・締め・給与・税金）は accounting
 - 取引先・案件・見積もり・提案・商談は sales
 - 期日のある作業依頼は task、それ以外の情報共有は note
-- note には基本的に聞き返さない（明らかに重要な抜けがある場合のみ）`;
+- note には基本的に聞き返さない（明らかに重要な抜けがある場合のみ）
+
+【相手（counterparty）と場所の区別 ※間違えやすいので注意】
+- counterparty に入れるのは「人」か「会社・団体」だけ（例：田中さん、A社、docomo代理店）
+- 店舗名・地名・イベント会場・モール名は相手ではない（例：北花田、イオン、コロワ甲子園、ヨドバシ梅田）。場所は title か background に入れ、counterparty には入れない
+- 例：「北花田で来週法人の提案」→ counterparty は null、title は「北花田での法人提案」
+- 例：「A社の佐藤さんに見積もり」→ counterparty は「A社 佐藤さん」
+- 判断に迷う固有名詞は counterparty に入れず、question で「〇〇は相手（人・会社）ですか、場所ですか？」と確認する
+
+【訂正への対応】
+- 送信者が「相手が違う」「日付が違う」のように訂正してきたら、指摘された項目だけを直し、他の項目や会話に出ていない人名・会社名を勝手に補わない
+- 何に直すべきか分からなければ、推測せずに question で「相手は誰にしますか？」と聞く`;
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
