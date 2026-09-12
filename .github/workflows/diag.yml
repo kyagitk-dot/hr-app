@@ -1,0 +1,61 @@
+name: Diag Today
+
+on:
+  workflow_dispatch: # 手動実行。今日の入店・報告・保留状態を社員ごとに一覧表示する（診断用）
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump today's status per employee
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          node << 'EOF'
+          const https = require('https');
+          const crypto = require('crypto');
+          const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+          const projectId = sa.project_id;
+          const today = new Date(Date.now() + 9*3600*1000).toISOString().slice(0,10);
+          function token() {
+            const now = Math.floor(Date.now() / 1000);
+            const h = Buffer.from(JSON.stringify({alg:'RS256',typ:'JWT'})).toString('base64url');
+            const p = Buffer.from(JSON.stringify({iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore', aud: 'https://oauth2.googleapis.com/token', exp: now + 3600, iat: now})).toString('base64url');
+            const s = crypto.createSign('RSA-SHA256'); s.update(`${h}.${p}`);
+            const jwt = `${h}.${p}.${s.sign(sa.private_key, 'base64url')}`;
+            return new Promise((res, rej) => {
+              const data = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+              const r = https.request({hostname:'oauth2.googleapis.com', path:'/token', method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':data.length}}, x => { let b=''; x.on('data', d => b += d); x.on('end', () => res(JSON.parse(b).access_token)); });
+              r.on('error', rej); r.write(data); r.end();
+            });
+          }
+          function get(t, path) {
+            return new Promise((res, rej) => {
+              const r = https.request({hostname:'firestore.googleapis.com', path, method:'GET', headers:{Authorization:`Bearer ${t}`}}, x => { let b=''; x.on('data', d => b += d); x.on('end', () => res(JSON.parse(b))); });
+              r.on('error', rej); r.end();
+            });
+          }
+          const v = (f) => f ? (f.stringValue ?? f.integerValue ?? f.doubleValue ?? f.booleanValue ?? (f.timestampValue) ?? (f.arrayValue ? `[${(f.arrayValue.values||[]).length}]` : JSON.stringify(f))) : '';
+          (async () => {
+            const t = await token();
+            const base = `/v1/projects/${projectId}/databases/(default)/documents`;
+            const lu = await get(t, `${base}/lineUsers?pageSize=300`);
+            console.log(`=== today ${today} ===`);
+            for (const doc of (lu.documents || [])) {
+              const f = doc.fields || {}; const id = doc.name.split('/').pop();
+              const name = v(f.displayName), uid = v(f.uid), guest = v(f.isGuest);
+              if (guest === true || String(uid).startsWith('guest_')) continue;
+              const rep = await get(t, `${base}/salesReports/${uid}/daily/${today}`);
+              const rf = rep.fields || {};
+              const repStr = rep.error ? 'なし' : `店舗="${v(rf.storeName)}" 代理店="${v(rf.agency)}" carrier=${v(rf.defaultCarrierId)} entries=${v(rf.entries)} updated=${v(rf.updatedAt)}`;
+              const goal = await get(t, `${base}/goals/${uid}/daily/${today}`);
+              const goalStr = goal.error ? 'なし' : 'あり';
+              const pend = await get(t, `${base}/lineUsersPending/${id}`);
+              const pendStr = pend.error ? '-' : `${v((pend.fields||{}).type)}`;
+              const memoP = await get(t, `${base}/work_memo_pending/${id}`);
+              const onb = await get(t, `${base}/assistant_onboarding/${id}`);
+              const schP = await get(t, `${base}/schedule_pending/${id}`);
+              console.log(`■ ${name} | 今日の報告: ${repStr} | 目標: ${goalStr} | pending: ${pendStr} | memo聞き返し中: ${memoP.error ? 'no' : 'YES(' + v((memoP.fields||{}).createdAt) + ')'} | 設定ヒアリング待ち: ${onb.error ? 'no' : 'YES'} | 仮予定返事待ち: ${schP.error ? 'no' : 'YES'}`);
+            }
+          })();
+          EOF
