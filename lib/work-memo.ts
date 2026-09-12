@@ -196,6 +196,14 @@ export async function cancelPendingMemo(userId: string): Promise<boolean> {
 
 /** 保留中の聞き返しがあるか（line-webhook.ts の振り分けで使う） */
 export async function hasPendingMemo(userId: string): Promise<boolean> {
-  const snap = await getFirestore().collection(PENDING_COLLECTION).doc(userId).get();
-  return snap.exists;
+  const ref = getFirestore().collection(PENDING_COLLECTION).doc(userId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  // 30分以上返事がない聞き返しは打ち切り、入店報告などの決まった操作を優先できるようにする
+  const createdAt = snap.data()!.createdAt?.toMillis ? snap.data()!.createdAt.toMillis() : 0;
+  if (createdAt && Date.now() - createdAt > 30 * 60 * 1000) {
+    await ref.delete();
+    return false;
+  }
+  return true;
 }
