@@ -57,7 +57,7 @@ async function parseWithAI(text: string): Promise<any | null> {
 }
 
 キャリア対応：docomo/ドコモ→docomo、ahamo/アハモ→ahamo、au/AU→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、その他格安SIM→other
-項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線→netLine、クレカノーマル/N/ノーマル→creditCardNormal、ゴールド→creditCardGold、電気→energy、ガス→gas、周辺機器/アクセサリ→peripheralAmount
+項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線/AIR/エア/エアー(SoftBank Air)→netLine、クレカノーマル/N/ノーマル→creditCardNormal、ゴールド→creditCardGold、電気→energy、ガス→gas、周辺機器/アクセサリ→peripheralAmount
 重要：「クレカ」「カード」「クレジット」など種別が不明な場合は "creditCardAmbiguous" フィールドに件数を入れてください。ノーマル・ゴールドが明示されている場合のみ各フィールドに入れてください。
 件数が不明な項目は0にしてください。carrierId が判断できない場合は null にしてください。`;
 
@@ -152,6 +152,9 @@ const FIELD_KEYWORDS: Record<string, string> = {
   ひかり: "netLine",
   ネット: "netLine",
   wifi: "netLine",
+  air: "netLine",
+  エアー: "netLine",
+  エア: "netLine",
   "wi-fi": "netLine",
   光: "netLine",
   固定: "netLine",
@@ -583,7 +586,8 @@ export default async function handler(req: any, res: any) {
       // ── 業務メモモード（経理・営業のメモをAIで解析して記録）──
       // ① 聞き返し中なら、その回答として処理
       try {
-        if (!isGuestUser && await hasPendingMemo(lineUserId)) {
+        const KNOWN_COMMAND = /^(入店報告|入店[：:]|退店報告|追加報告|目標|ランキング|修正して|修正|未入力|実績|今日|本日|フォーマット|名前変更|設定)/.test(text);
+      if (!isGuestUser && !KNOWN_COMMAND && await hasPendingMemo(lineUserId)) {
           if (/^(やめる|キャンセル|取り消し|取消)$/.test(text)) {
             await cancelPendingMemo(lineUserId);
             await replyMessage(replyToken, "メモを取り消しました。");
@@ -864,7 +868,7 @@ ${content}
           updatedAt: new Date(),
         });
         await replyMessage(replyToken,
-          "以下の形式で入店情報を送ってください。\n\n代理店名・店舗名・キャリア\n\n例：〇〇エージェント・北花田店・ワイモバイル\n\n代理店がない場合：なし・北花田店・docomo"
+          "店舗名とキャリア（あれば代理店名も）を、いつもの言葉で送ってください。\n\n例：北花田店でドコモ\n例：ヨドバシ梅田、代理店はABC、ワイモバ"
         );
         continue;
       }
@@ -1056,48 +1060,88 @@ ${content}
 
       // ── pending：入店フロー（一括入力）──────────────────
       if (pendingType2 === "awaiting_checkin_all") {
-        // 「代理店・店舗・キャリア」を「・」「/」「,」「、」で分割
-        const parts2 = text.split(/[・/,、\n]/).map(s=>s.trim()).filter(Boolean);
-        let agency = "", storeName = "", carrierId = "other";
-
-        if (parts2.length >= 3) {
-          agency = parts2[0] === "なし" ? "" : parts2[0];
-          storeName = parts2[1];
-          const carrierText = parts2[2].toLowerCase();
-          if (carrierText.includes("docomo")||carrierText.includes("ドコモ")) carrierId = "docomo";
-          else if (carrierText.includes("ahamo")||carrierText.includes("アハモ")) carrierId = "ahamo";
-          else if (carrierText.includes("au")) carrierId = "au";
-          else if (carrierText.includes("softbank")||carrierText.includes("ソフトバンク")||carrierText.includes("sb")) carrierId = "softbank";
-          else if (carrierText.includes("ymobile")||carrierText.includes("ワイモバイル")||carrierText.includes("ワイモバ")) carrierId = "ymobile";
-          else if (carrierText.includes("uq")) carrierId = "uq";
-        } else if (parts2.length === 2) {
-          storeName = parts2[0];
-          const carrierText = parts2[1].toLowerCase();
-          if (carrierText.includes("docomo")||carrierText.includes("ドコモ")) carrierId = "docomo";
-          else if (carrierText.includes("ahamo")||carrierText.includes("アハモ")) carrierId = "ahamo";
-          else if (carrierText.includes("au")) carrierId = "au";
-          else if (carrierText.includes("softbank")||carrierText.includes("ソフトバンク")||carrierText.includes("sb")) carrierId = "softbank";
-          else if (carrierText.includes("ymobile")||carrierText.includes("ワイモバイル")||carrierText.includes("ワイモバ")) carrierId = "ymobile";
-          else if (carrierText.includes("uq")) carrierId = "uq";
-        } else {
-          await replyMessage(replyToken, "フォーマットが正しくありません。\n\n代理店名・店舗名・キャリア\n\n例：〇〇エージェント・北花田店・ワイモバイル");
+        // 説明文のコピーっぽい入力は登録しない（「以下の形式」「例：」を含む長文など）
+        if (/以下の形式|例[：:]/.test(text) || text.length > 60) {
+          await replyMessage(replyToken, "店舗名とキャリアを、いつもの言葉で送ってください。\n\n例：北花田店でドコモ\n例：ヨドバシ梅田、代理店はABC、ワイモバ");
           continue;
         }
 
+        let agency = "", storeName = "", carrierId = "";
+        try {
+          const ciRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5", max_tokens: 200,
+              messages: [{ role: "user", content: `携帯ショップの入店報告です。以下の文から店舗名・代理店名・メインキャリアを読み取り、JSONだけを返してください。\n\nメッセージ：「${text}」\n\n{"storeName": "店舗名 または null", "agency": "代理店名。なければnull", "carrierId": "docomo|ahamo|au|softbank|ymobile|uq|other|null"}\n\ndocomo/ドコモ→docomo、ahamo/アハモ→ahamo、au→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、それ以外のキャリア名→other、キャリアが読み取れなければnull` }],
+            }),
+          });
+          const ciData = await ciRes.json();
+          const ciRaw = ciData.content?.[0]?.text || "";
+          const ciMatch = ciRaw.match(/\{[\s\S]*\}/);
+          if (ciMatch) {
+            const ci = JSON.parse(ciMatch[0]);
+            storeName = ci.storeName || "";
+            agency = ci.agency || "";
+            carrierId = ci.carrierId && ci.carrierId !== "null" ? ci.carrierId : "";
+          }
+        } catch (err) {
+          console.error("入店解析エラー:", err);
+        }
+
+        if (!storeName) {
+          await replyMessage(replyToken, "店舗名が読み取れませんでした。もう一度、店舗名とキャリアを送ってください。\n\n例：北花田店でドコモ");
+          continue;
+        }
+        if (!carrierId) carrierId = "other";
+
+        await db.collection("lineUsersPending").doc(lineUserId).set({
+          type: "awaiting_goal_after_checkin",
+          storeName, agency, carrierId,
+          updatedAt: new Date(),
+        });
+
+        const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
+        await replyMessage(replyToken,
+          `🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n今日の目標はありますか？\n例：新規2 ネット1\n（なければ「なし」と送ってください）`
+        );
+        continue;
+      }
+
+      // ── pending：入店内容の確認後、今日の目標を聞いている状態 ──
+      if (pendingType2 === "awaiting_goal_after_checkin") {
+        const pd = pendingSnap2.data()!;
         await db.collection("lineUsersPending").doc(lineUserId).delete();
         const today = todayStr();
         const ref = db.collection("salesReports").doc(uid).collection("daily").doc(today);
         await ref.set({
-          uid, displayName, date:today,
-          storeName, agency,
-          defaultCarrierId: carrierId,
-          entries:[], peripheralTotal:0,
-          updatedAt:new Date(), createdAt:new Date()
-        }, {merge:true});
+          uid, displayName, date: today,
+          storeName: pd.storeName, agency: pd.agency,
+          defaultCarrierId: pd.carrierId,
+          entries: [], peripheralTotal: 0,
+          updatedAt: new Date(), createdAt: new Date(),
+        }, { merge: true });
 
-        const carrierLabel = CARRIER_LABELS[carrierId]||carrierId;
+        let goalMsg = "";
+        if (!/^(なし|無し|特になし)$/.test(text.trim())) {
+          const goalEntry: Record<string, number> = {};
+          for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) {
+            const re = new RegExp(`${kw}[^0-9]{0,3}([0-9]+)`, "i");
+            const m = text.toLowerCase().match(re);
+            if (m) goalEntry[key] = parseInt(m[1], 10);
+          }
+          if (Object.keys(goalEntry).length > 0) {
+            await db.collection("goals").doc(uid).collection("daily").doc(today).set({
+              uid, displayName, date: today, goals: goalEntry, updatedAt: new Date(),
+            });
+            const desc = Object.entries(goalEntry).map(([k, v]) => `${FIELD_LABELS[k] || k}：${v}件`).join("\n");
+            goalMsg = `\n\n【本日の目標】\n${desc}`;
+          }
+        }
+
+        const carrierLabel = CARRIER_LABELS[pd.carrierId] || pd.carrierId;
         await replyMessage(replyToken,
-          `✅ 入店登録完了！\n\n🏪 店舗：${storeName}\n🏢 代理店：${agency||"なし"}\n📱 キャリア：${carrierLabel}\n\n以降は件数だけ送ってください！\n\n例：新規3 MNP1\n例：機変2 クレカ1`
+          `✅ 入店登録完了！\n\n🏪 店舗：${pd.storeName}\n🏢 代理店：${pd.agency || "なし"}\n📱 キャリア：${carrierLabel}${goalMsg}\n\n以降は件数だけ送ってください！\n\n例：新規3 MNP1\n例：機変2 クレカ1`
         );
         continue;
       }
