@@ -1400,7 +1400,7 @@ ${content}
           replyToken,
           "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
         );
-        logChat({ lineUserId, userName: displayName, text, intent: "report_failed", reply: null });
+        await logChat({ lineUserId, userName: displayName, text, intent: "report_failed", reply: null });
         continue;
       }
 
