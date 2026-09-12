@@ -9,6 +9,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "../lib/work-memo";
 import { handleFreeText } from "../lib/assistant";
+import { logChat } from "../lib/chat-log";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(
@@ -1399,6 +1400,7 @@ ${content}
           replyToken,
           "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
         );
+        logChat({ lineUserId, userName: displayName, text, intent: "report_failed", reply: null });
         continue;
       }
 
