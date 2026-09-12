@@ -5,6 +5,7 @@
 //   3. 仮の予定への返事（了解／変更／断り）
 //   4. 件数報告 / 業務メモ / 予定照会 / 完了 / 実績 / 相談 の判定と振り分け
 // を担当し、返信文を返す。件数報告なら isReport=true を返して既存の報告フローに渡す。
+// すべてのやり取りを chat_logs に記録する（精度調査用、社長のみ確認）。
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { classifyIntent, handleConsult, hasActiveConsult } from './consult';
@@ -12,6 +13,7 @@ import { handleWorkMemo } from './work-memo';
 import { getSettings, saveSettings, parseSettingsFromText, onboardingQuestion, describeSettings } from './user-settings';
 import { ASSISTANT } from './assistant-config';
 import { handlePendingReply, querySchedules, completeMemo, myStats } from './tools';
+import { logChat } from './chat-log';
 
 const ONBOARD_PENDING = 'assistant_onboarding'; // ヒアリング回答待ち
 
@@ -21,9 +23,14 @@ export async function handleFreeText(
   const db = getFirestore();
   const settings = await getSettings(lineUserId);
 
+  const finish = (reply: string | null, isReport: boolean, intent: string, meta?: Record<string, any>) => {
+    logChat({ lineUserId, userName, text, intent, reply, meta });
+    return { reply, isReport };
+  };
+
   // 「設定」「設定を見る」→ 現在の設定を表示
   if (/^(設定|設定を?見る|設定確認)$/.test(text.trim())) {
-    return { reply: `今の設定はこちらです。\n${describeSettings(settings)}\n\n変えたいときは「口調フランクにして」「まとめは7時に」「声掛けはいらない」のように送ってください。`, isReport: false };
+    return finish(`今の設定はこちらです。\n${describeSettings(settings)}\n\n変えたいときは「口調フランクにして」「まとめは7時に」「声掛けはいらない」のように送ってください。`, false, 'settings_view');
   }
 
   // 初回ヒアリングへの回答待ちなら、まず設定として読む
@@ -34,7 +41,7 @@ export async function handleFreeText(
     if (parsed) {
       await saveSettings(lineUserId, { ...parsed.patch, onboarded: true });
       const after = await getSettings(lineUserId);
-      return { reply: `${parsed.reply}\n\n${describeSettings(after)}\n\nこれでいきますね。変えたくなったらいつでも言ってください。`, isReport: false };
+      return finish(`${parsed.reply}\n\n${describeSettings(after)}\n\nこれでいきますね。変えたくなったらいつでも言ってください。`, false, 'onboarding_answer', { patch: parsed.patch });
     }
     // 設定として読めなければ、既定値で確定して通常処理へ
     await saveSettings(lineUserId, { onboarded: true });
@@ -45,20 +52,20 @@ export async function handleFreeText(
     const parsed = await parseSettingsFromText(text, settings, userName);
     if (parsed) {
       await saveSettings(lineUserId, { ...parsed.patch, onboarded: true });
-      return { reply: parsed.reply, isReport: false };
+      return finish(parsed.reply, false, 'settings_change', { patch: parsed.patch });
     }
   }
 
   // 他人から入れられた仮の予定への返事（了解／変更／断り）
   const pendingReply = await handlePendingReply(text, lineUserId, userName);
-  if (pendingReply) return { reply: pendingReply, isReport: false };
+  if (pendingReply) return finish(pendingReply, false, 'schedule_pending_reply');
 
   // 意図判定 → 振り分け
   const intent = await classifyIntent(text, await hasActiveConsult(lineUserId));
-  if (intent === 'report') return { reply: null, isReport: true };
-  if (intent === 'schedule') return { reply: await querySchedules(text, userName), isReport: false };
-  if (intent === 'done') return { reply: await completeMemo(text, lineUserId, userName), isReport: false };
-  if (intent === 'stats') return { reply: await myStats(text, uid, userName), isReport: false };
+  if (intent === 'report') return finish(null, true, 'report');
+  if (intent === 'schedule') return finish(await querySchedules(text, userName), false, 'schedule_query');
+  if (intent === 'done') return finish(await completeMemo(text, lineUserId, userName), false, 'done');
+  if (intent === 'stats') return finish(await myStats(text, uid, userName), false, 'stats');
 
   let reply = intent === 'memo'
     ? await handleWorkMemo(text, lineUserId, userName)
@@ -70,5 +77,5 @@ export async function handleFreeText(
     await db.collection(ONBOARD_PENDING).doc(lineUserId).set({ createdAt: FieldValue.serverTimestamp() });
     reply += `\n\n──\n${ASSISTANT.name}です。${onboardingQuestion(userName)}`;
   }
-  return { reply, isReport: false };
+  return finish(reply, false, intent);
 }
