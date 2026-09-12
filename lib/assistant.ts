@@ -12,7 +12,7 @@ import { classifyIntent, handleConsult, hasActiveConsult } from './consult';
 import { handleWorkMemo } from './work-memo';
 import { getSettings, saveSettings, parseSettingsFromText, onboardingQuestion, describeSettings } from './user-settings';
 import { ASSISTANT } from './assistant-config';
-import { handlePendingReply, querySchedules, completeMemo, myStats } from './tools';
+import { handlePendingReply, querySchedules, completeMemo, myStats, listMemos, deleteMemo } from './tools';
 import { logChat } from './chat-log';
 
 const ONBOARD_PENDING = 'assistant_onboarding'; // ヒアリング回答待ち
@@ -66,6 +66,8 @@ export async function handleFreeText(
   if (intent === 'schedule') return finish(await querySchedules(text, userName), false, 'schedule_query');
   if (intent === 'done') return finish(await completeMemo(text, lineUserId, userName), false, 'done');
   if (intent === 'stats') return finish(await myStats(text, uid, userName), false, 'stats');
+  if (intent === 'list') return finish(await listMemos(lineUserId, userName), false, 'list');
+  if (intent === 'delete') return finish(await deleteMemo(text, lineUserId, userName), false, 'delete');
 
   let reply = intent === 'memo'
     ? await handleWorkMemo(text, lineUserId, userName)
