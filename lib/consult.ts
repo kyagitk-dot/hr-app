@@ -8,6 +8,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { handleWorkMemo } from './work-memo';
 import { COMPANY, ASSISTANT } from './assistant-config';
 import { getSettings, personaFor } from './user-settings';
+import { pushOrDefer } from './push';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -33,19 +34,16 @@ async function claude(system: string, messages: Turn[], maxTokens = 800): Promis
   return (data.content ?? []).map((c: any) => c.text ?? '').join('').trim();
 }
 
+// 社長へのエスカレーション通知も夜間ルールに従う（夜間は朝にまとめて届く）
 async function pushText(to: string, text: string) {
-  await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ACCESS_TOKEN}` },
-    body: JSON.stringify({ to, messages: [{ type: 'text', text }] }),
-  });
+  await pushOrDefer(to, text, null);
 }
 
 // ── 自由文の意図を判定 ─────────────────────────────────
 // report  : 件数報告（キャリア名や「新規3件」など販売件数の報告）
 // memo    : 予定・約束・支払い・案件の動きなど「記録しておくべきこと」
 // consult : 相談・質問・悩み・雑談など「返事がほしいこと」
-export type Intent = 'report' | 'memo' | 'consult' | 'schedule' | 'done' | 'stats' | 'list' | 'delete';
+export type Intent = 'report' | 'memo' | 'consult' | 'schedule' | 'done' | 'stats' | 'list' | 'delete' | 'relay';
 export async function classifyIntent(text: string, inSession: boolean): Promise<Intent> {
   const system = `${COMPANY.name}（${COMPANY.business}）の社員がLINEで送ってきた文章を分類します。次のどれか1語だけを返してください。
 report  : 販売件数の報告。キャリア名（docomo/au/SoftBank/ワイモバイル/UQなど）や「新規3件」「MNP1」「機変2 クレカ1」のように、項目と件数だけを並べた短い文。店舗名が付くこともある
@@ -55,11 +53,12 @@ done    : 何かが「終わった・完了した・済んだ」という報告�
 stats   : 自分の販売実績を知りたい。「今月の実績は？」「今日何件だっけ」など
 list    : 自分の未完了メモ・予定を「見せて」「一覧」「何がある」と確認したい文
 delete  : メモや予定を「消して」「削除して」「取り消して」と明確に頼んでいる文（相談で頼んでいても delete にする）
+relay   : 「〇〇さんに△△と伝えて」「〇〇が入店報告したら△△と伝えて」のように、他の人への伝言をあなた（AI）に頼んでいる文（他人の予定を入れる依頼は memo のまま）
 consult : 質問・相談・悩み・意見を求めている・雑談・報告への返事など、「返事や助言がほしい」文
 判断のコツ：件数と項目名だけの無機質な文は report。文章になっていて予定や約束を語っていれば memo（他人に予定を入れる依頼「田中さんに来週B社訪問入れて」も memo）。問いかけや気持ちが入っていれば consult。
 ${inSession ? '注意：この人は直前まで相談中です。件数報告でなければ consult にしてください。' : '迷ったら consult。'}`;
   const out = (await claude(system, [{ role: 'user', content: text }], 5)).toLowerCase();
-  for (const k of ['report', 'memo', 'schedule', 'done', 'stats', 'list', 'delete'] as Intent[]) if (out.startsWith(k)) return k;
+  for (const k of ['report', 'memo', 'schedule', 'done', 'stats', 'list', 'delete', 'relay'] as Intent[]) if (out.startsWith(k)) return k;
   return 'consult';
 }
 
