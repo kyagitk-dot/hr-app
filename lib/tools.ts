@@ -114,6 +114,50 @@ ${list}`, text, 10,
   return `✅ 完了にしました：${m.title}${m.dueDate ? `（期日${m.dueDate}）` : ''}\nお疲れさまでした。`;
 }
 
+// ── メモ一覧の表示 ─────────────────────────────────────
+export async function listMemos(lineUserId: string, userName: string): Promise<string> {
+  const db = getFirestore();
+  const snap = await db.collection('work_memos').where('status', 'in', ['open', 'pending']).get();
+  const mine = snap.docs.filter((d) => { const m = d.data(); return m.createdBy === lineUserId || m.assignee === userName; });
+  if (!mine.length) return `${userName}さんの未完了メモ・予定は今ありません。`;
+  const lines = mine.map((d, i) => {
+    const m = d.data();
+    const parts = [m.title];
+    if (m.counterparty) parts.push(`相手:${m.counterparty}`);
+    if (m.dueDate) parts.push(`期日:${m.dueDate}`);
+    if (m.assignee && m.assignee !== userName) parts.push(`担当:${m.assignee}`);
+    if (m.status === 'pending') parts.push('（未確認）');
+    return `${i + 1}. ${parts.join(' / ')}`;
+  });
+  return `📋 ${userName}さんの未完了メモ・予定（${mine.length}件）\n${lines.join('\n')}\n\n削除したいときは「1番を削除して」のように番号か内容で伝えてください。`;
+}
+
+// ── メモの削除（本人からの明示的な依頼のときだけ、実際にFirestoreから削除する）──
+export async function deleteMemo(text: string, lineUserId: string, userName: string): Promise<string> {
+  const db = getFirestore();
+  const snap = await db.collection('work_memos').where('status', 'in', ['open', 'pending']).get();
+  const mine = snap.docs.filter((d) => { const m = d.data(); return m.createdBy === lineUserId || m.assignee === userName; });
+  if (!mine.length) return '削除できる未完了メモ・予定は今ありません。';
+
+  const isAll = /全部|すべて|全て/.test(text);
+  const list = mine.map((d, i) => `${i + 1}. ${d.data().title}${d.data().dueDate ? `（期日${d.data().dueDate}）` : ''}`).join('\n');
+
+  if (isAll) {
+    for (const d of mine) await d.ref.delete();
+    return `🗑️ ${userName}さんの未完了メモ・予定を${mine.length}件、すべて削除しました。\n\n${list}`;
+  }
+
+  const pick = await claude(
+    `ユーザーが「削除して」と言っている件が、以下のどれに当たるかを判断し、番号だけを返してください。該当がなければ 0。複数なら最初の1つ。\n${list}`, text, 10,
+  );
+  const n = parseInt(pick.replace(/[^0-9]/g, ''), 10);
+  if (!n || n > mine.length) return `どの件のことか分かりませんでした。今の未完了メモ・予定はこちらです。番号か内容で教えてください。\n${list}`;
+  const doc = mine[n - 1];
+  const title = doc.data().title;
+  await doc.ref.delete();
+  return `🗑️ 削除しました：${title}`;
+}
+
 // ── 自分の実績 ─────────────────────────────────────────
 const ITEM_KEYS = ['newContract', 'deviceChange', 'mnpIn', 'portIn', 'netLine', 'creditCardNormal', 'creditCardGold', 'energy', 'gas'];
 const ITEM_LABEL: Record<string, string> = { newContract: '新規', deviceChange: '機変', mnpIn: 'MNP', portIn: '番号移行', netLine: 'ネット', creditCardNormal: 'クレカN', creditCardGold: 'クレカG', energy: '電気', gas: 'ガス' };
