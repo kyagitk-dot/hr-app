@@ -8,6 +8,7 @@
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { COMPANY, ASSISTANT } from './assistant-config';
+import { pushOrDefer } from './push';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -21,12 +22,10 @@ function fmtDate(s: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${DAY[d.getUTCDay()]})`;
 }
 
-export async function pushText(to: string, text: string) {
-  await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ACCESS_TOKEN}` },
-    body: JSON.stringify({ to, messages: [{ type: 'text', text }] }),
-  });
+// 他人への通知は夜間ルール付き（夜間は保留。依頼者がいれば「今送って」で即送信可）
+export async function pushText(to: string, text: string, requestedBy?: string | null): Promise<string> {
+  const r = await pushOrDefer(to, text, requestedBy ?? null);
+  return r.note;
 }
 
 async function claude(system: string, user: string, maxTokens = 400): Promise<string> {
@@ -56,6 +55,8 @@ export function resolveName(input: string | null, nameToId: Record<string, strin
   if (!input) return null;
   const key = input.replace(/(さん|くん|君|ちゃん|氏)$/, '').trim();
   if (!key) return null;
+  // AI自身の名前（例「啓吾くん」）は人として扱わない（同名の社員に通知が飛ぶのを防ぐ）
+  if (key === ASSISTANT.name.replace(/(さん|くん|君|ちゃん|氏)$/, '')) return null;
   if (nameToId[key]) return key;
   const hit = Object.keys(nameToId).filter((n) => n.includes(key) || key.includes(n));
   return hit.length === 1 ? hit[0] : null;
@@ -191,8 +192,8 @@ export async function notifyAssignee(memoId: string, memo: any, requesterLineId:
   await db.collection('work_memos').doc(memoId).update({ assignee: name, status: 'pending', requestedBy: requesterLineId, requestedByName: requesterName });
   await db.collection('schedule_pending').doc(nameToId[name]).set({ memoId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   const when = memo.dueDate ? `${fmtDate(memo.dueDate)} ` : '';
-  await pushText(nameToId[name], `📅 ${requesterName}さんから予定の依頼です\n${when}${memo.title}${memo.counterparty ? `（${memo.counterparty}）` : ''}${memo.nextAction ? `\n次: ${memo.nextAction}` : ''}\n\nOKなら「了解」、都合が悪ければそのまま返事してください（${requesterName}さんに伝えます）`);
-  return `${name}さんに通知しました。了解の返事が来たら確定になります。`;
+  const note = await pushText(nameToId[name], `📅 ${requesterName}さんから予定の依頼です\n${when}${memo.title}${memo.counterparty ? `（${memo.counterparty}）` : ''}${memo.nextAction ? `\n次: ${memo.nextAction}` : ''}\n\nOKなら「了解」、都合が悪ければそのまま返事してください（${requesterName}さんに伝えます）`, requesterLineId);
+  return note ? `${name}さんへの通知を預かりました。${note}` : `${name}さんに通知しました。了解の返事が来たら確定になります。`;
 }
 
 /** 本人に仮の予定があるとき、その返事を処理する。処理したら返信文、無関係なら null */
