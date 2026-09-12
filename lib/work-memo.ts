@@ -107,10 +107,15 @@ async function parseMemo(
       'x-api-key': ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: 900, system, messages: history }),
+    // Sonnet 5 は返答前に自動で思考する分もトークンを消費するため、上限は多めに取る
+    body: JSON.stringify({ model: MODEL, max_tokens: 4000, system, messages: history }),
   });
   const data = await res.json();
-  const raw = (data.content ?? []).map((c: any) => c.text ?? '').join('');
+  if (!res.ok || data.error) {
+    console.error('parseMemo API error:', res.status, JSON.stringify(data.error ?? data).slice(0, 500));
+    throw new Error('api error: ' + (data.error?.message ?? res.status));
+  }
+  const raw = (data.content ?? []).filter((c: any) => c.type === 'text').map((c: any) => c.text ?? '').join('');
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('no json: ' + raw.slice(0, 100));
   const memo = JSON.parse(jsonMatch[0]) as WorkMemo;
