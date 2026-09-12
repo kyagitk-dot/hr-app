@@ -14,6 +14,8 @@ import { getSettings, saveSettings, parseSettingsFromText, onboardingQuestion, d
 import { ASSISTANT } from './assistant-config';
 import { handlePendingReply, querySchedules, completeMemo, myStats, listMemos, deleteMemo } from './tools';
 import { logChat } from './chat-log';
+import { createRelay, deliverRelays } from './relay';
+import { sendDeferredNow } from './push';
 
 const ONBOARD_PENDING = 'assistant_onboarding'; // ヒアリング回答待ち
 
@@ -27,6 +29,15 @@ export async function handleFreeText(
     await logChat({ lineUserId, userName, text, intent, reply, meta });
     return { reply, isReport };
   };
+
+  // 本人が話しかけてきたので、「次に話しかけてきたとき」の伝言があれば先に渡す
+  try { await deliverRelays(lineUserId, 'next'); } catch (e) { console.error('deliverRelays(next)', e); }
+
+  // 「今送って」→ 夜間に保留した自分発の通知を即送信
+  if (/^(今送って|今すぐ送って|夜でも送って|送っていいよ?|送ってください)[。！!]?$/.test(text.trim())) {
+    const n = await sendDeferredNow(lineUserId);
+    return finish(n > 0 ? `了解です、${n}件を今送りました。` : '今は保留中の通知はありません。', false, 'send_deferred_now', { n });
+  }
 
   // 「設定」「設定を見る」→ 現在の設定を表示
   if (/^(設定|設定を?見る|設定確認)$/.test(text.trim())) {
@@ -68,6 +79,7 @@ export async function handleFreeText(
   if (intent === 'stats') return finish(await myStats(text, uid, userName), false, 'stats');
   if (intent === 'list') return finish(await listMemos(lineUserId, userName), false, 'list');
   if (intent === 'delete') return finish(await deleteMemo(text, lineUserId, userName), false, 'delete');
+  if (intent === 'relay') return finish(await createRelay(text, lineUserId, userName), false, 'relay');
 
   let reply = intent === 'memo'
     ? await handleWorkMemo(text, lineUserId, userName)
