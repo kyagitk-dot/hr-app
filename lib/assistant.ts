@@ -23,8 +23,8 @@ export async function handleFreeText(
   const db = getFirestore();
   const settings = await getSettings(lineUserId);
 
-  const finish = (reply: string | null, isReport: boolean, intent: string, meta?: Record<string, any>) => {
-    logChat({ lineUserId, userName, text, intent, reply, meta });
+  const finish = async (reply: string | null, isReport: boolean, intent: string, meta?: Record<string, any>) => {
+    await logChat({ lineUserId, userName, text, intent, reply, meta });
     return { reply, isReport };
   };
 
