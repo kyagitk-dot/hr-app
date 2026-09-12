@@ -45,7 +45,7 @@ async function pushText(to: string, text: string) {
 // report  : 件数報告（キャリア名や「新規3件」など販売件数の報告）
 // memo    : 予定・約束・支払い・案件の動きなど「記録しておくべきこと」
 // consult : 相談・質問・悩み・雑談など「返事がほしいこと」
-export type Intent = 'report' | 'memo' | 'consult' | 'schedule' | 'done' | 'stats';
+export type Intent = 'report' | 'memo' | 'consult' | 'schedule' | 'done' | 'stats' | 'list' | 'delete';
 export async function classifyIntent(text: string, inSession: boolean): Promise<Intent> {
   const system = `${COMPANY.name}（${COMPANY.business}）の社員がLINEで送ってきた文章を分類します。次のどれか1語だけを返してください。
 report  : 販売件数の報告。キャリア名（docomo/au/SoftBank/ワイモバイル/UQなど）や「新規3件」「MNP1」「機変2 クレカ1」のように、項目と件数だけを並べた短い文。店舗名が付くこともある
@@ -53,11 +53,13 @@ memo    : 予定・約束・期日・支払い・請求・取引先とのやり�
 schedule: 予定を「見たい・教えて」という照会。「今週の予定は？」「田中さんの来週の予定」「みんな何入ってる？」など
 done    : 何かが「終わった・完了した・済んだ」という報告。「A社の件終わった」「家賃払った」など
 stats   : 自分の販売実績を知りたい。「今月の実績は？」「今日何件だっけ」など
+list    : 自分の未完了メモ・予定を「見せて」「一覧」「何がある」と確認したい文
+delete  : メモや予定を「消して」「削除して」「取り消して」と明確に頼んでいる文（相談で頼んでいても delete にする）
 consult : 質問・相談・悩み・意見を求めている・雑談・報告への返事など、「返事や助言がほしい」文
 判断のコツ：件数と項目名だけの無機質な文は report。文章になっていて予定や約束を語っていれば memo（他人に予定を入れる依頼「田中さんに来週B社訪問入れて」も memo）。問いかけや気持ちが入っていれば consult。
 ${inSession ? '注意：この人は直前まで相談中です。件数報告でなければ consult にしてください。' : '迷ったら consult。'}`;
   const out = (await claude(system, [{ role: 'user', content: text }], 5)).toLowerCase();
-  for (const k of ['report', 'memo', 'schedule', 'done', 'stats'] as Intent[]) if (out.startsWith(k)) return k;
+  for (const k of ['report', 'memo', 'schedule', 'done', 'stats', 'list', 'delete'] as Intent[]) if (out.startsWith(k)) return k;
   return 'consult';
 }
 
@@ -120,6 +122,7 @@ export async function handleConsult(text: string, lineUserId: string, userName: 
 - 仕事以外の話題でも、普通のAIアシスタントとして何でも答える（雑談、調べもの、文章作成など）
 - まず相手の状況をきちんと理解する。情報が足りなければ、1〜2個だけ質問してから答える
 - 一般論で終わらせず、「明日からこう動く」まで落とす
+- 重要：あなたには「メモや予定を削除する」「登録する」などデータを直接操作する力はありません。「削除しました」「登録しました」のように、やっていないことをやったと答えるのは絶対に禁止です。削除や登録を頼まれたら、実行はせず「メモの削除は『削除して』とだけ送ってもらえれば処理します」のように、正しい送り方を案内してください
 - LINEなので、1回の返事は300字程度まで。読みやすく、箇条書きは最小限。絵文字は使わない
 - 会社の制度や数字など、あなたが知らないことは知ったかぶりせず「社長か上司に確認したほうがいい」と伝える
 - 相談内容は本人とあなたの間だけのもの。ただし、下記の場合は escalate を true にする
