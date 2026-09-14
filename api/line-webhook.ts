@@ -9,6 +9,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { handleWorkMemo, cancelPendingMemo, hasPendingMemo } from "../lib/work-memo";
 import { handleFreeText } from "../lib/assistant";
+import { deliverRelays } from "../lib/relay";
 import { logChat } from "../lib/chat-log";
 
 if (!getApps().length) {
@@ -1151,6 +1152,8 @@ ${content}
         await replyMessage(replyToken,
           `✅ 入店登録完了！\n\n🏪 店舗：${pd.storeName}\n🏢 代理店：${pd.agency || "なし"}\n📱 キャリア：${carrierLabel}${goalMsg}\n\n以降は件数だけ送ってください！\n\n例：新規3 MNP1\n例：機変2 クレカ1`
         );
+        // 預かっている伝言（「入店報告したら伝えて」）があれば渡す
+        try { await deliverRelays(lineUserId, "checkin"); } catch (e) { console.error("deliverRelays(checkin)", e); }
         continue;
       }
 
@@ -1177,6 +1180,8 @@ ${content}
         });
         await replyMessage(replyToken, `代理店：${agency||"なし"}\n\n次にメインキャリアを教えてください。\n\ndocomo／ahamo／au／SoftBank／ワイモバイル／UQ／その他`);
         continue;
+        // 預かっている伝言（「入店報告したら伝えて」）があれば渡す
+        try { await deliverRelays(lineUserId, "checkin"); } catch (e) { console.error("deliverRelays(checkin)", e); }
       }
 
       if (pendingType2 === "awaiting_checkin_carrier") {
@@ -1403,9 +1408,45 @@ ${content}
         parsed = parseReportText(cleanText) || parseReportText(text);
       }
       if (!parsed) {
+        // 件数として読めなかった場合、入店報告（店舗名＋キャリア）として読めないか試す
+        let checkin: { storeName?: string; agency?: string; carrierId?: string } | null = null;
+        try {
+          const ciRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5", max_tokens: 200,
+              messages: [{ role: "user", content: `携帯ショップの入店報告かどうか判定してください。件数の報告（新規3件など）ではなく、店舗名やキャリア名だけの報告ならJSONを返してください。入店報告でなければ {"storeName": null} を返してください。\n\nメッセージ：「${text}」\n\n{"storeName": "店舗名 または null", "agency": "代理店名。なければnull", "carrierId": "docomo|ahamo|au|softbank|ymobile|uq|other|null"}` }],
+            }),
+          });
+          const ciData = await ciRes.json();
+          const ciRaw = (ciData.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text ?? "").join("");
+          const ciMatch = ciRaw.match(/\{[\s\S]*\}/);
+          if (ciMatch) {
+            const ci = JSON.parse(ciMatch[0]);
+            if (ci.storeName) checkin = { storeName: ci.storeName, agency: ci.agency || "", carrierId: ci.carrierId && ci.carrierId !== "null" ? ci.carrierId : "other" };
+          }
+        } catch (err) {
+          console.error("自由文入店解析エラー:", err);
+        }
+
+        if (checkin) {
+          await db.collection("lineUsersPending").doc(lineUserId).set({
+            type: "awaiting_goal_after_checkin",
+            storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId,
+            updatedAt: new Date(),
+          });
+          const carrierLabel1 = CARRIER_LABELS[checkin.carrierId!] || checkin.carrierId;
+          await replyMessage(replyToken,
+            `🏪 店舗：${checkin.storeName}\n🏢 代理店：${checkin.agency || "なし"}\n📱 キャリア：${carrierLabel1}\n\n今日の目標はありますか？\n例：新規2 ネット1`
+          );
+          try { await deliverRelays(lineUserId, "checkin"); } catch (e) { console.error("deliverRelays(checkin)", e); }
+          continue;
+        }
+
         await replyMessage(
           replyToken,
-          "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。"
+          "うまく読み取れませんでした。例：「〇〇店でdocomo新規3件、ネット回線1件」のように送ってください。\n（入店報告なら「北花田店でドコモ」のように送ってください）"
         );
         await logChat({ lineUserId, userName: displayName, text, intent: "report_failed", reply: null });
         continue;
