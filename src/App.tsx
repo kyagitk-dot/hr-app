@@ -429,6 +429,18 @@ const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
               <div style={{fontSize:24,fontWeight:700,color:C.gray[800],flexShrink:0}}>{checkedInCount}<span style={{fontSize:13,fontWeight:400,color:C.gray[400]}}>/{users.length}名</span></div>
               <div style={{flex:1,height:8,background:C.gray[100],borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${(checkedInCount/users.length)*100}%`,background:C.teal[400],borderRadius:4}}/></div>
             </div>
+            {checkedInCount>0&&(
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11,color:C.gray[400],marginBottom:6}}>入店済み（{checkedInCount}名）</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {todayCheckins.filter(c=>c.checkedIn).map(c=>(
+                    <span key={c.id} style={{fontSize:12,padding:"4px 10px",borderRadius:20,background:C.teal[50],color:C.teal[800]}}>
+                      {c.name}{c.storeName?<span style={{color:C.gray[400],marginLeft:4}}>{c.storeName}</span>:null}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {checkedInCount===users.length?(
               <div style={{fontSize:13,color:C.teal[800]}}>✓ 全員入店済みです</div>
             ):(
