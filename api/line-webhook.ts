@@ -402,8 +402,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const events = req.body.events || [];
+    // エラー時に本人に一言返せるよう、直前の送信者を覚えておく
+    let currentUserId: string | null = null;
 
     for (const event of events) {
+      // エラー時の最後の手段として、このイベントの送信者を記録しておく
+      try { currentUserId = (event as any)?.source?.userId || currentUserId; } catch {}
 
       // ── 友だち追加時：社員か取引先か選択ボタンを送る ────
       if (event.type === "follow") {
@@ -1661,6 +1665,10 @@ ${content}
     res.status(200).send("OK");
   } catch (err: any) {
     console.error("Webhook error:", err);
+    // 上のどこかで予期しない例外が出たとき、黙って終わらず、直前の送信者に一言返す（replyTokenは使えないことがあるので push で）
+    if (currentUserId) {
+      try { await pushMessage(currentUserId, { type: "text", text: "すみません、エラーが発生してうまく処理できませんでした。お手数ですがもう一度送ってください。" }); } catch (e2) { console.error("Webhook error fallback push failed:", e2); }
+    }
     res.status(200).send("OK");
   }
 }
