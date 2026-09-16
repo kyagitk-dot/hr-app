@@ -187,3 +187,66 @@ export async function handleRestaurant(text: string, lineUserId: string, userNam
 
   return null; // 日報でも問い合わせでもない → 通常の相談・メモへ
 }
+
+// ── グループLINE（店舗ごと）──────────────────────────
+// 飲食店のグループLINEに啓吾くんを入れて使う。報告の記録だけを行い、
+// 雑談には反応しない（数値が読み取れた投稿にだけ短く返す）。
+// 対象グループは restaurant_groups/{groupId} に登録されたものだけ。
+
+export async function isRestaurantGroup(groupId: string): Promise<boolean> {
+  const snap = await getFirestore().collection('restaurant_groups').doc(groupId).get();
+  return snap.exists && snap.data()?.active !== false;
+}
+
+/** 管理者がグループ内で「このグループを飲食モードに登録」と送ったときの処理 */
+export async function handleGroupAdmin(text: string, groupId: string, userName?: string): Promise<string | null> {
+  if (!userName || !COMPANY.adminNames.includes(userName)) return null;
+  const t = text.trim();
+  if (/^(この)?グループ.*(飲食).*(登録|追加|設定)/.test(t)) {
+    const storeName = (t.match(/[「『](.+?)[」』]/) || [])[1] || '';
+    await getFirestore().collection('restaurant_groups').doc(groupId).set(
+      { storeName, active: true, addedBy: userName, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    return `🍴 このグループを飲食モードに登録しました${storeName ? `（${storeName}）` : ''}。\n\nこのグループに「売上32万 客数110」のように書けば日報として記録します。雑談には反応しません。`;
+  }
+  if (/^(この)?グループ.*(飲食).*(解除|削除|停止|外す)/.test(t)) {
+    await getFirestore().collection('restaurant_groups').doc(groupId).set(
+      { active: false, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    return 'このグループの飲食モードを解除しました。記録済みの日報は残ります。';
+  }
+  return null;
+}
+
+/**
+ * グループLINEの投稿を処理する。日報として読めたら記録して返信文を返す。
+ * 読めなければ null（＝啓吾くんは黙る）。
+ */
+export async function handleRestaurantGroup(text: string, groupId: string, senderName?: string, userName?: string): Promise<string | null> {
+  const admin = await handleGroupAdmin(text, groupId, userName);
+  if (admin) return admin;
+  if (!(await isRestaurantGroup(groupId))) return null;
+
+  const r = await parseDaily(text);
+  if (!r) return null; // 日報でなければ黙る
+
+  const ref = getFirestore().collection('restaurant_reports').doc(`group_${groupId}`).collection('daily').doc(r.date);
+  const prev = (await ref.get()).data() || {};
+  const merged: any = { date: r.date, groupId, updatedAt: FieldValue.serverTimestamp() };
+  for (const k of ['sales', 'customers', 'foodCost', 'laborCost', 'note'] as const) {
+    const v = (r as any)[k];
+    if (v !== undefined && v !== null) merged[k] = v; else if (prev[k] !== undefined) merged[k] = prev[k];
+  }
+  if (senderName) merged.lastReportedBy = senderName;
+  await ref.set(merged, { merge: true });
+
+  const lines = [`📝 ${r.date} の日報を記録しました`];
+  if (merged.sales != null) lines.push(`・売上: ${yen(merged.sales)}`);
+  if (merged.customers != null) lines.push(`・客数: ${merged.customers}人`);
+  if (merged.sales != null && merged.customers) lines.push(`・客単価: ${yen(merged.sales / merged.customers)}`);
+  if (merged.foodCost != null) lines.push(`・食材費: ${yen(merged.foodCost)}`);
+  if (merged.laborCost != null) lines.push(`・人件費: ${yen(merged.laborCost)}`);
+  if (merged.sales && (merged.foodCost != null || merged.laborCost != null)) {
+    const fl = ((merged.foodCost || 0) + (merged.laborCost || 0)) / merged.sales * 100;
+    lines.push(`・FL比率: ${fl.toFixed(1)}%${fl > 60 ? ' ⚠️' : ''}`);
+  }
+  return lines.join('\n');
+}
