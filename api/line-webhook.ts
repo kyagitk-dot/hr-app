@@ -1414,7 +1414,11 @@ ${content}
       if (!parsed) {
         // 件数として読めなかった場合、入店報告（店舗名＋キャリア）として読めないか試す
         let checkin: { storeName?: string; agency?: string; carrierId?: string } | null = null;
+        // 入店報告以外の用件（依頼・確認・予定・請求など）を含む文は、入店報告として扱わない
+        const NOT_CHECKIN = /(確認|依頼|お願い|検討|請求|見積|支払|振込|入金|納品|発注|受注|予定|会議|打合|打ち合わせ|訪問|連絡|電話|メール|提出|締切|期限|明日|明後日|来週|来月|やっておいて|しておいて|伝えて|記録)/;
+        const tooLongForCheckin = text.replace(/\s/g, "").length > 30;
         try {
+          if (NOT_CHECKIN.test(text) || tooLongForCheckin) throw new Error("not a checkin");
           const ciRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
@@ -1431,7 +1435,7 @@ ${content}
             if (ci.storeName) checkin = { storeName: ci.storeName, agency: ci.agency || "", carrierId: ci.carrierId && ci.carrierId !== "null" ? ci.carrierId : "other" };
           }
         } catch (err) {
-          console.error("自由文入店解析エラー:", err);
+          if (String((err as any)?.message||"") !== "not a checkin") console.error("自由文入店解析エラー:", err);
         }
 
         if (checkin) {
