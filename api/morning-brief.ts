@@ -9,6 +9,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { COMPANY, ASSISTANT } from "../lib/assistant-config";
 import { getSettings, personaFor, UserSettings } from "../lib/user-settings";
+import { flushDeferred } from "../lib/push";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}");
@@ -127,6 +128,10 @@ export default async function handler(req: any, res: any) {
     const dow = now.getUTCDay();
     const force = req.query?.force === "1"; // テスト用：時刻・曜日を無視して全員に送る
 
+    // 夜間に保留していた通知をまとめて送る（夜間帯は flushDeferred 側で何もしない）
+    let flushed = 0;
+    try { flushed = await flushDeferred(); } catch (e) { console.error("flushDeferred", e); }
+
     // 未完了メモ
     const snap = await db.collection("work_memos").where("status", "==", "open").get();
     const memos: Memo[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -211,7 +216,7 @@ export default async function handler(req: any, res: any) {
     if (sentTo.length || nudged.length) {
       await db.collection("morning_briefs").add({ date: today, hour, memoCount: memos.length, sentTo, nudged, createdAt: new Date() });
     }
-    res.status(200).json({ ok: true, date: today, hour, memoCount: memos.length, sentTo, nudged });
+    res.status(200).json({ ok: true, flushed, date: today, hour, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
     console.error("scheduler error:", err);
     res.status(500).json({ ok: false, error: String(err) });
