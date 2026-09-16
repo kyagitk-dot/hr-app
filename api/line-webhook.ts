@@ -1074,6 +1074,22 @@ ${content}
       // ── pending：入店フロー（一括入力）──────────────────
       if (pendingType2 === "awaiting_checkin_all") {
         // 説明文のコピーっぽい入力は登録しない（「以下の形式」「例：」を含む長文など）
+                // 「やめる」系で入店フローを抜けられるようにする
+        if (/^(やめる|やめ|キャンセル|中止|戻る|取り消し|取消)[。！!]?$/.test(text.trim())) {
+          await db.collection("lineUsersPending").doc(lineUserId).delete();
+          await replyMessage(replyToken, "入店報告をキャンセルしました。");
+          continue;
+        }
+        // 入店報告の待ち状態が古い（30分以上前）なら、待ち状態を解除して通常処理に回す
+        const pendingAt2 = pendingSnap2.data()?.updatedAt;
+        const pendingMs2 = pendingAt2?.toDate ? pendingAt2.toDate().getTime() : (pendingAt2 ? new Date(pendingAt2).getTime() : 0);
+        const pendingIsStale = !pendingMs2 || (Date.now() - pendingMs2) > 30 * 60 * 1000;
+        // 入店報告らしくない文（依頼・確認・予定・質問など）は、入店として登録せず通常処理に回す
+        const NOT_CHECKIN_PENDING = /(確認|依頼|お願い|検討|請求|見積|支払|振込|入金|納品|発注|受注|予定|会議|打合|打ち合わせ|訪問|連絡|電話|メール|提出|締切|期限|明日|明後日|来週|来月|わかる|分かる|教えて|ですか|ますか|\?|？|伝えて|記録|タスク)/;
+        if (pendingIsStale || NOT_CHECKIN_PENDING.test(text)) {
+          await db.collection("lineUsersPending").doc(lineUserId).delete();
+          // このまま下の通常処理（相談・メモ・件数報告）へ進む
+        } else {
         if (/以下の形式|例[：:]/.test(text) || text.length > 60) {
           await replyMessage(replyToken, "店舗名とキャリアを、いつもの言葉で送ってください。\n\n例：北花田店でドコモ\n例：ヨドバシ梅田、代理店はABC、ワイモバ");
           continue;
@@ -1119,6 +1135,7 @@ ${content}
           `🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n今日の目標はありますか？\n例：新規2 ネット1\n（なければ「なし」と送ってください）`
         );
         continue;
+        }
       }
 
       // ── pending：入店内容の確認後、今日の目標を聞いている状態 ──
