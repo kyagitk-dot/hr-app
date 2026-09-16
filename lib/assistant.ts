@@ -36,7 +36,7 @@ export async function handleFreeText(
 
   // 飲食店モード（登録された人だけ）: 日報・月次の問い合わせならここで返す
   try {
-    const rep = await handleRestaurant(text, lineUserId);
+    const rep = await handleRestaurant(text, lineUserId, userName);
     if (rep) return finish(rep, false, 'restaurant');
   } catch (e) { console.error('handleRestaurant', e); }
 
