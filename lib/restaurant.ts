@@ -5,6 +5,8 @@
 //   ・日報は restaurant_reports/{lineUserId}/daily/{YYYY-MM-DD}
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { COMPANY } from './assistant-config';
+import { lineDirectory, resolveName } from './tools';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 const MODEL = 'claude-sonnet-5';
@@ -132,7 +134,35 @@ export async function missingDays(lineUserId: string): Promise<string[]> {
 /**
  * 飲食店モードの入口。処理したら返信文、対象外なら null を返す。
  */
-export async function handleRestaurant(text: string, lineUserId: string): Promise<string | null> {
+export async function handleRestaurant(text: string, lineUserId: string, userName?: string): Promise<string | null> {
+  const isAdmin = !!userName && COMPANY.adminNames.includes(userName);
+
+  // ── 管理者用：飲食モードの登録・解除・一覧 ──────────────
+  if (isAdmin) {
+    const t0 = text.trim();
+    // 「〇〇を飲食モードに登録」「〇〇を飲食店担当に追加」
+    const add = t0.match(/^(.+?)\s*(?:を|は)?\s*飲食(?:店)?(?:モード|担当)?(?:に|へ)?\s*(?:登録|追加|設定)/);
+    const del = t0.match(/^(.+?)\s*(?:を|は)?\s*飲食(?:店)?(?:モード|担当)?(?:から)?\s*(?:解除|削除|外す|停止)/);
+    if (add || del) {
+      const { nameToId } = await lineDirectory();
+      const raw = (add || del)![1].trim();
+      const name = resolveName(raw, nameToId);
+      if (!name) return `「${raw}」さんが見つかりませんでした。LINE連携済みの登録名で送ってください。`;
+      const ref = getFirestore().collection('restaurant_users').doc(nameToId[name]);
+      if (add) {
+        await ref.set({ displayName: name, active: true, addedBy: userName, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return `🍴 ${name}さんを飲食モードに登録しました。\n\n${name}さんは啓吾くんに「売上32万 客数110」のように送ると日報が記録され、「今月どう？」で集計が返ります。`;
+      }
+      await ref.set({ active: false, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return `${name}さんの飲食モードを解除しました。記録済みの日報は残ります。`;
+    }
+    if (/^飲食(?:モード)?(?:の)?(?:一覧|リスト|メンバー|登録者)/.test(t0)) {
+      const snap = await getFirestore().collection('restaurant_users').get();
+      const names = snap.docs.filter(d => d.data().active !== false).map(d => d.data().displayName || d.id);
+      return names.length ? `🍴 飲食モードの登録者\n${names.map(n => `・${n}`).join('\n')}` : '飲食モードに登録されている人はいません。';
+    }
+  }
+
   if (!(await isRestaurantUser(lineUserId))) return null;
   const t = text.trim();
 
