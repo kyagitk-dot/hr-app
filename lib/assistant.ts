@@ -15,6 +15,7 @@ import { ASSISTANT } from './assistant-config';
 import { handlePendingReply, querySchedules, completeMemo, myStats, listMemos, deleteMemo } from './tools';
 import { logChat } from './chat-log';
 import { createRelay, deliverRelays } from './relay';
+import { handleRestaurant } from './restaurant';
 import { sendDeferredNow } from './push';
 
 const ONBOARD_PENDING = 'assistant_onboarding'; // ヒアリング回答待ち
@@ -32,6 +33,12 @@ export async function handleFreeText(
 
   // 本人が話しかけてきたので、「次に話しかけてきたとき」の伝言があれば先に渡す
   try { await deliverRelays(lineUserId, 'next'); } catch (e) { console.error('deliverRelays(next)', e); }
+
+  // 飲食店モード（登録された人だけ）: 日報・月次の問い合わせならここで返す
+  try {
+    const rep = await handleRestaurant(text, lineUserId);
+    if (rep) return finish(rep, false, 'restaurant');
+  } catch (e) { console.error('handleRestaurant', e); }
 
   // 「今送って」→ 夜間に保留した自分発の通知を即送信
   if (/^(今送って|今すぐ送って|夜でも送って|送っていいよ?|送ってください)[。！!]?$/.test(text.trim())) {
