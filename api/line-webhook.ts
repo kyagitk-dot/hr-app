@@ -874,7 +874,21 @@ ${content}
         continue;
       }
 
-      // ── 入店報告 ──────────────────────────────────────────
+      // ── 入店報告の取り消し（誤って入店登録されたとき）──────
+      if (/^(入店(報告)?(じゃない|ではない|違う|間違い)|入店取り消し|入店取消|入店キャンセル)/.test(text.trim())) {
+        const undoSnap = await db.collection("checkinUndo").doc(lineUserId).get();
+        const undo = undoSnap.exists ? undoSnap.data()! : null;
+        if (!undo) {
+          await replyMessage(replyToken, "取り消せる入店登録が見つかりませんでした。");
+          continue;
+        }
+        await db.collection("lineUsersPending").doc(lineUserId).delete();
+        await db.collection("checkinUndo").doc(lineUserId).delete();
+        await replyMessage(replyToken, `↩️ 入店登録（${undo.storeName || "店舗名なし"}）を取り消しました。\n\n元のメッセージをタスクやメモとして記録する場合は、そのまま送り直してください。`);
+        continue;
+      }
+
+      // ── 入店報告 ───────────────────────────────────────────────────────────────
       if (text === "入店報告" || text.startsWith("入店：") || text.startsWith("入店:")) {
         await db.collection("lineUsersPending").doc(lineUserId).set({
           type: "awaiting_checkin_all",
@@ -1130,6 +1144,8 @@ ${content}
           updatedAt: new Date(),
         });
 
+        // 取り消し用に、今回の入店登録内容を覚えておく
+        await db.collection("checkinUndo").doc(lineUserId).set({ storeName, agency, carrierId, originalText: text, createdAt: new Date() });
         const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
         await replyMessage(replyToken,
           `🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n今日の目標はありますか？\n例：新規2 ネット1\n（なければ「なし」と送ってください）`
@@ -1461,6 +1477,8 @@ ${content}
             storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId,
             updatedAt: new Date(),
           });
+          // 取り消し用に、今回の入店登録内容を覚えておく
+          await db.collection("checkinUndo").doc(lineUserId).set({ storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId, originalText: text, createdAt: new Date() });
           const carrierLabel1 = CARRIER_LABELS[checkin.carrierId!] || checkin.carrierId;
           await replyMessage(replyToken,
             `🏪 店舗：${checkin.storeName}\n🏢 代理店：${checkin.agency || "なし"}\n📱 キャリア：${carrierLabel1}\n\n今日の目標はありますか？\n例：新規2 ネット1`
