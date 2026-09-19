@@ -5,10 +5,12 @@
 export const COMPANY = {
   name: '株式会社Athha',
   business: '携帯電話販売代理店（ショッピングモール等での販売イベント、法人営業、店舗運営）',
-  presidentName: '八木幸平',
-  // エスカレーション（社長への連絡）を受け取る人。LINE連携時の表示名で指定
+  presidentName: '桝田啓太',
+  // エスカレーション（社員の相談内容が伝わる先）。機微な内容が届くので慎重に。LINE連携時の表示名で指定
   adminNames: ['八木幸平'],
-  // 全体版ブリーフィングを受け取る役割（users.role）。上の adminNames にも届く
+  // 全体版ブリーフィングを受け取る人。エスカレーションとは別に管理する
+  briefingNames: ['八木幸平', '桝田啓太'],
+  // 全体版ブリーフィングを受け取る役割（users.role）。上の briefingNames にも届く
   adminRoles: ['admin'],
 };
 
