@@ -61,6 +61,8 @@ async function parseWithAI(text: string): Promise<any | null> {
 キャリア対応：docomo/ドコモ→docomo、ahamo/アハモ→ahamo、au/AU→au、softbank/ソフトバンク/SB→softbank、ymobile/ワイモバイル/ワイモバ→ymobile、uq/UQモバイル→uq、その他格安SIM→other
 項目対応：新規/新規契約→newContract、機変/機種変更→deviceChange、MNP転入/乗り換え/のりかえ→mnpIn、番号移行→portIn、ネット/光/固定回線/AIR/エア/エアー(SoftBank Air)→netLine、クレカノーマル/N/ノーマル→creditCardNormal、ゴールド→creditCardGold、電気→energy、ガス→gas、周辺機器/アクセサリ→peripheralAmount
 重要：「クレカ」「カード」「クレジット」など種別が不明な場合は "creditCardAmbiguous" フィールドに件数を入れてください。ノーマル・ゴールドが明示されている場合のみ各フィールドに入れてください。
+重要：各項目の「件数」を必ず正確に拾ってください。「〇〇3件」なら 3 です（1にしない）。
+カードの別名：PayPayカード/ペイペイカード/dカード/au PAYカード もクレジットカードとして扱い、「ノーマル/N」が付けば creditCardNormal、「ゴールド/G」なら creditCardGold、種別がなければ creditCardAmbiguous に入れてください。
 件数が不明な項目は0にしてください。carrierId が判断できない場合は null にしてください。`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -71,13 +73,18 @@ async function parseWithAI(text: string): Promise<any | null> {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
-        max_tokens: 500,
+        model: "claude-sonnet-5", // 件数の取りこぼしを防ぐため精度重視
+        max_tokens: 4000,
         messages: [{ role: "user", content: prompt }],
       }),
     });
     const data = await res.json();
-    const raw = data.content?.[0]?.text || "";
+    if (!res.ok || data.error) {
+      console.error("parseWithAI API error:", res.status, JSON.stringify(data.error ?? data).slice(0, 400));
+      return null;
+    }
+    // Sonnet 5 は思考ブロックを返すことがあるので text ブロックだけを連結する
+    const raw = (data.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text ?? "").join("");
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
@@ -1704,6 +1711,14 @@ ${content}
     res.status(200).send("OK");
   } catch (err: any) {
     console.error("Webhook error:", err);
+    // 管理者（八木さん）にも即通知する。出先でも異常に気づけるようにするため。
+    try {
+      const adminId = process.env.ADMIN_LINE_USER_ID;
+      if (adminId) {
+        const msg = `⚠️ 啓吾くんでエラーが発生しました\n\n${String((err as any)?.message || err).slice(0, 300)}`;
+        await pushMessage(adminId, { type: "text", text: msg });
+      }
+    } catch (e3) { console.error("admin notify failed:", e3); }
     // 上のどこかで予期しない例外が出たとき、黙って終わらず、直前の送信者に一言返す（replyTokenは使えないことがあるので push で）
     if (currentUserId) {
       try { await pushMessage(currentUserId, { type: "text", text: "すみません、エラーが発生してうまく処理できませんでした。お手数ですがもう一度送ってください。" }); } catch (e2) { console.error("Webhook error fallback push failed:", e2); }
