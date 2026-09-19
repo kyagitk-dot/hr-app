@@ -154,7 +154,7 @@ export default async function handler(req: any, res: any) {
       const s = await db.collection("users").where("role", "==", role).get();
       s.docs.forEach((d) => adminUids.add(d.id));
     }
-    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]) || COMPANY.adminNames.includes(lineName[id]));
+    const adminLineIds = Object.keys(lineUid).filter((id) => adminUids.has(lineUid[id]) || COMPANY.briefingNames.includes(lineName[id]));
 
     // 個人版の対象メモ（登録者本人＋担当者名が一致する人）
     const personal: Record<string, Memo[]> = {};
