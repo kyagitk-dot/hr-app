@@ -1482,7 +1482,20 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
       let parsed = await parseWithAI(text);
       // AI失敗時のみキーワード解析にフォールバック
       if (!parsed) {
-        parsed = parseReportText(cleanText) || parseReportText(text);
+                parsed = parseReportText(cleanText) || parseReportText(text);
+      }
+      // AIは項目を取りこぼすことがあるので、キーワード解析の結果で補う（多いほうを採用）
+      if (parsed) {
+        const kw = parseReportText(cleanText) || parseReportText(text);
+        if (kw && kw.entry) {
+          parsed.entry = parsed.entry || {};
+          for (const [k, v] of Object.entries(kw.entry)) {
+            const cur = Number((parsed.entry as any)[k]) || 0;
+            const alt = Number(v) || 0;
+            if (alt > cur) (parsed.entry as any)[k] = alt;
+          }
+          if (!parsed.carrierId && kw.carrierId) parsed.carrierId = kw.carrierId;
+        }
       }
       if (!parsed) {
         // 件数として読めなかった場合、入店報告（店舗名＋キャリア）として読めないか試す
