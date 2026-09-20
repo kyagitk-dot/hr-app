@@ -1154,9 +1154,20 @@ ${content}
 
         // 取り消し用に、今回の入店登録内容を覚えておく
         await db.collection("checkinUndo").doc(lineUserId).set({ storeName, agency, carrierId, originalText: text, createdAt: new Date() });
-        const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
+                // この時点で入店を成立させる（目標は後から任意で登録）
+        const todayCI = todayStr();
+        await db.collection("salesReports").doc(uid).collection("daily").doc(todayCI).set({
+          uid, displayName, date: todayCI,
+          storeName, agency,
+          defaultCarrierId: carrierId,
+          entries: [], peripheralTotal: 0,
+          goalPending: true,
+          checkinAt: new Date(),
+          updatedAt: new Date(), createdAt: new Date(),
+        }, { merge: true });
+const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
         await replyMessage(replyToken,
-          `🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n今日の目標はありますか？\n例：新規2 ネット1\n（なければ「なし」と送ってください）`
+                    `✅ 入店登録完了！\n\n🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n今日の目標を教えてください\n例：新規2 ネット1\n（なければ「なし」と送ってください）`
         );
         continue;
         }
@@ -1172,6 +1183,7 @@ ${content}
           uid, displayName, date: today,
           storeName: pd.storeName, agency: pd.agency,
           defaultCarrierId: pd.carrierId,
+          goalPending: false,
           entries: [], peripheralTotal: 0,
           updatedAt: new Date(), createdAt: new Date(),
         }, { merge: true });
