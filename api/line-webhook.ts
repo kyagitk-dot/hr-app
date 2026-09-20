@@ -895,7 +895,61 @@ ${content}
         continue;
       }
 
-            // ── 目標の登録（「目標 新規2 ネット1」）────────────
+                  // ── 件数の訂正（取り消し・修正・確認）────────────
+      {
+        const tTrim = text.trim();
+        const dailyRef = db.collection("salesReports").doc(uid).collection("daily").doc(todayStr());
+        const ITEM_LABELS2: Record<string, string> = { newContract: "新規", deviceChange: "機変", mnpIn: "MNP転入", portIn: "番号移行", netLine: "ネット", creditCardNormal: "クレカ(N)", creditCardGold: "クレカ(G)", energy: "電気", gas: "ガス" };
+        const sumText = (entries: any[]) => {
+          const tot: Record<string, number> = {};
+          for (const e of entries || []) for (const [k, v] of Object.entries(e)) { if (k === "carrierId") continue; tot[k] = (tot[k] || 0) + (Number(v) || 0); }
+          const lines = Object.entries(tot).filter(([, v]) => v > 0).map(([k, v]) => `・${ITEM_LABELS2[k] || k}：${v}件`);
+          const total = Object.values(tot).reduce((a, b) => a + b, 0);
+          return lines.length ? `${lines.join("\n")}\n合計：${total}件` : "まだ記録はありません。";
+        };
+
+        if (/^(今日の件数|今日の実績|件数確認|累計)[？?]?$/.test(tTrim)) {
+          const d = (await dailyRef.get()).data();
+          await replyMessage(replyToken, `📊 今日の累計\n${sumText(d?.entries || [])}`);
+          continue;
+        }
+
+        if (/^(取り消し|取消し|取り消して|さっきの取り消し|直前を取り消し|報告取り消し)[。！!]?$/.test(tTrim)) {
+          const uSnap = await db.collection("reportUndo").doc(lineUserId).get();
+          const u = uSnap.exists ? uSnap.data()! : null;
+          if (!u || u.date !== todayStr()) { await replyMessage(replyToken, "取り消せる報告が見つかりませんでした。"); continue; }
+          const dSnap = await dailyRef.get();
+          const dData: any = dSnap.exists ? dSnap.data() : { entries: [] };
+          const ents: any[] = dData.entries || [];
+          const ei = ents.findIndex((e: any) => e.carrierId === u.carrierId);
+          if (ei >= 0) { for (const [k, v] of Object.entries(u.entry || {})) ents[ei][k] = Math.max(0, (Number(ents[ei][k]) || 0) - (Number(v) || 0)); }
+          await dailyRef.set({ entries: ents, peripheralTotal: Math.max(0, (dData.peripheralTotal || 0) - (u.peripheralAmount || 0)), updatedAt: new Date() }, { merge: true });
+          await db.collection("reportUndo").doc(lineUserId).delete();
+          await replyMessage(replyToken, `↩️ 直前の報告「${String(u.originalText).slice(0, 40)}」を取り消しました。\n\n📊 今日の累計\n${sumText(ents)}`);
+          continue;
+        }
+
+        const fixM = tTrim.match(/^(.+?)\s*を?\s*([0-9]+)\s*件?\s*(に)?\s*(修正|訂正|に直して|に変更)/);
+        if (fixM) {
+          const kwRaw = fixM[1].trim().toLowerCase();
+          const num = parseInt(fixM[2], 10);
+          let field = "";
+          for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) if (kwRaw.includes(kw.toLowerCase())) { field = key; break; }
+          if (!field) { await replyMessage(replyToken, `「${fixM[1]}」がどの項目か分かりませんでした。\n例：MNPを2件に修正`); continue; }
+          const dSnap = await dailyRef.get();
+          const dData: any = dSnap.exists ? dSnap.data() : { entries: [] };
+          const ents: any[] = dData.entries || [];
+          if (!ents.length) { await replyMessage(replyToken, "今日の記録がまだありません。"); continue; }
+          let ti = ents.findIndex((e: any) => (Number(e[field]) || 0) > 0);
+          if (ti < 0) ti = ents.length - 1;
+          ents[ti][field] = num;
+          await dailyRef.set({ entries: ents, updatedAt: new Date() }, { merge: true });
+          await replyMessage(replyToken, `✏️ ${ITEM_LABELS2[field] || field}を${num}件に修正しました。\n\n📊 今日の累計\n${sumText(ents)}`);
+          continue;
+        }
+      }
+
+      // ── 目標の登録// ── 目標の登録（「目標 新規2 ネット1」）────────────
       if (/^目標[\s　:：]/.test(text.trim()) || /^目標$/.test(text.trim())) {
         const goalBody = text.trim().replace(/^目標[\s　:：]*/, "");
         const goalEntry2: Record<string, number> = {};
@@ -1754,7 +1808,13 @@ const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
         { merge: true }
       );
 
-      const itemTotal = Object.values(parsed.entry).reduce(
+            // 「取り消し」用に、今回足した分を覚えておく
+      await db.collection("reportUndo").doc(lineUserId).set({
+        date, carrierId: safeCarrierId, entry: parsed.entry,
+        peripheralAmount: parsed.peripheralAmount || 0,
+        originalText: text, createdAt: new Date(),
+      });
+const itemTotal = Object.values(parsed.entry).reduce(
         (a: number, b) => a + (b as number),
         0
       );
