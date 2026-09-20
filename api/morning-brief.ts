@@ -127,6 +127,8 @@ export default async function handler(req: any, res: any) {
     const hour = now.getUTCHours();
     const dow = now.getUTCDay();
     const force = req.query?.force === "1"; // テスト用：時刻・曜日を無視して全員に送る
+    // only を渡すと、そのLINEユーザーにだけ送る（LINEからの手動実行用）
+    const only = typeof req.query?.only === "string" ? req.query.only : "";
 
     // 夜間に保留していた通知をまとめて送る（夜間帯は flushDeferred 側で何もしない）
     let flushed = 0;
@@ -177,10 +179,11 @@ export default async function handler(req: any, res: any) {
 
     for (const lineId of Object.keys(lineName)) {
       if ((lineUid[lineId] || "").startsWith("guest_")) continue;
+      if (only && lineId !== only) continue; // 指定された人にだけ送る
       const name = lineName[lineId];
       const settings = await getSettings(lineId);
       const isAdmin = adminLineIds.includes(lineId);
-      const itsTime = force || (settings.briefHour === hour && settings.briefDays.includes(dow));
+      const itsTime = force || !!only || (settings.briefHour === hour && settings.briefDays.includes(dow));
       if (!itsTime) continue;
 
       if (isAdmin) {
@@ -202,7 +205,7 @@ export default async function handler(req: any, res: any) {
       }
 
       // 声掛け（メモがなく、3日以上動きがなく、本人の希望回数に合う曜日）
-      const nudgeToday = force || NUDGE_DAYS[settings.nudgePerWeek]?.includes(dow);
+      const nudgeToday = !only && (force || NUDGE_DAYS[settings.nudgePerWeek]?.includes(dow));
       if (!nudgeToday || active.has(lineId)) continue;
       const system = `${personaFor(settings, name)}\n所属: ${COMPANY.name}（${COMPANY.business}）`;
       const msg = (await claude(system,
