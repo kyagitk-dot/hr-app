@@ -1593,11 +1593,17 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
 
       // ── クレカの種別が不明な場合は聞き返す ──────────────
             // AIが同じカードを種別不明とノーマルの両方に入れることがあるので、二重計上を取り除く
+            // 文中に「ノーマル」「ゴールド」の明示がなければ、カードは種別不明にまとめて聞き返す
+      const cardTypeStated = /(ノーマル|のーまる|ゴールド|ごーるど|\(N\)|\(G\)|クレカN|クレカG)/i.test(text);
+      const n0 = Number((parsed.entry as any)?.creditCardNormal) || 0;
+      const g0 = Number((parsed.entry as any)?.creditCardGold) || 0;
       const amb0 = Number((parsed.entry as any)?.creditCardAmbiguous) || 0;
-      if (amb0 > 0) {
-        const n0 = Number((parsed.entry as any).creditCardNormal) || 0;
-        const g0 = Number((parsed.entry as any).creditCardGold) || 0;
-        if (n0 + g0 >= amb0) delete (parsed.entry as any).creditCardAmbiguous;
+      if (!cardTypeStated && (n0 + g0 + amb0) > 0) {
+        delete (parsed.entry as any).creditCardNormal;
+        delete (parsed.entry as any).creditCardGold;
+        (parsed.entry as any).creditCardAmbiguous = Math.max(n0, g0, amb0);
+      } else if (amb0 > 0 && n0 + g0 >= amb0) {
+        delete (parsed.entry as any).creditCardAmbiguous;
       }
 const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
       if (ambiguousCountEarly && ambiguousCountEarly > 0) {
