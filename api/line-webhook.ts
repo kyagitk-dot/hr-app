@@ -1089,7 +1089,16 @@ ${content}
           const safeCarrierId2 = parsed.carrierId || "other";
           const idx2 = entries2.findIndex((e:any)=>e.carrierId===safeCarrierId2);
           const emptyEntry2 = (carrierId:string)=>({carrierId,newContract:0,deviceChange:0,mnpIn:0,portIn:0,netLine:0,creditCardNormal:0,creditCardGold:0,energy:0,gas:0});
-          const newEntry = {...(idx2>=0?entries2[idx2]:emptyEntry2(safeCarrierId2)),[cardKey]:count,...(parsed.entry||{})};
+                    // 既存の件数に足し算する（上書きするとその日の実績が消えてしまうため）
+          const baseEntry = idx2>=0 ? entries2[idx2] : emptyEntry2(safeCarrierId2);
+          const newEntry: any = { ...baseEntry };
+          const addSrc: any = { ...(parsed.entry||{}) };
+          delete addSrc.creditCardAmbiguous;
+          addSrc[cardKey] = (Number(addSrc[cardKey])||0) + count;
+          for (const [k, v] of Object.entries(addSrc)) {
+            if (k === 'carrierId') continue;
+            newEntry[k] = (Number(newEntry[k])||0) + (Number(v)||0);
+          }
           delete (newEntry as any).creditCardAmbiguous;
           if(idx2>=0) entries2[idx2]=newEntry; else entries2.push(newEntry);
           await ref.set({uid,displayName,date:targetDate,entries:entries2,peripheralTotal:existing2.peripheralTotal||0,agency:parsed.agency||existing2.agency||"",storeName:parsed.storeName||existing2.storeName||"",updatedAt:new Date(),createdAt:snap2.exists?existing2.createdAt:new Date()},{merge:true});
