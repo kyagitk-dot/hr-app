@@ -895,7 +895,27 @@ ${content}
         continue;
       }
 
-      // ── 入店報告 ───────────────────────────────────────────────────────────────
+            // ── 目標の登録（「目標 新規2 ネット1」）────────────
+      if (/^目標[\s　:：]/.test(text.trim()) || /^目標$/.test(text.trim())) {
+        const goalBody = text.trim().replace(/^目標[\s　:：]*/, "");
+        const goalEntry2: Record<string, number> = {};
+        for (const [kw, key] of Object.entries(FIELD_KEYWORDS)) {
+          const re = new RegExp(`${kw}[^0-9]{0,3}([0-9]+)`, "i");
+          const m = goalBody.toLowerCase().match(re);
+          if (m) goalEntry2[key] = parseInt(m[1], 10);
+        }
+        const todayG = todayStr();
+        await db.collection("salesReports").doc(uid).collection("daily").doc(todayG).set(
+          { uid, displayName, date: todayG, goal: goalEntry2, goalPending: false, updatedAt: new Date() },
+          { merge: true }
+        );
+        const gLabels: Record<string, string> = { newContract: "新規", deviceChange: "機変", mnpIn: "MNP転入", portIn: "番号移行", netLine: "ネット", creditCardNormal: "クレカ(N)", creditCardGold: "クレカ(G)", energy: "電気", gas: "ガス" };
+        const gDesc = Object.entries(goalEntry2).map(([k, v]) => `・${gLabels[k] || k}：${v}件`).join("\n");
+        await replyMessage(replyToken, gDesc ? `🎯 今日の目標を登録しました\n${gDesc}` : "目標を読み取れませんでした。「目標 新規2 ネット1」のように送ってください。");
+        continue;
+      }
+
+      // ── 入店報告 ──// ── 入店報告 ───────────────────────────────────────────────────────────────
       if (text === "入店報告" || text.startsWith("入店：") || text.startsWith("入店:")) {
         await db.collection("lineUsersPending").doc(lineUserId).set({
           type: "awaiting_checkin_all",
@@ -1167,7 +1187,7 @@ ${content}
         }, { merge: true });
 const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
         await replyMessage(replyToken,
-                    `✅ 入店登録完了！\n\n🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n今日の目標を教えてください\n例：新規2 ネット1\n（なければ「なし」と送ってください）`
+                              `✅ 入店登録完了！\n\n🏪 店舗：${storeName}\n🏢 代理店：${agency || "なし"}\n📱 キャリア：${carrierLabel0}\n\n🎯 今日の目標を「目標 新規2 ネット1」のように送ってください\n（先頭の「目標」が目印です。件数の報告はそのまま送ってOK）`
         );
         continue;
         }
@@ -1492,11 +1512,8 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
         }
 
         if (checkin) {
-          await db.collection("lineUsersPending").doc(lineUserId).set({
-            type: "awaiting_goal_after_checkin",
-            storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId,
-            updatedAt: new Date(),
-          });
+          aw        // 目標待ちの状態は作らない（次の件数報告を目標として飲み込んでしまうため）
+;
           // 取り消し用に、今回の入店登録内容を覚えておく
           await db.collection("checkinUndo").doc(lineUserId).set({ storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId, originalText: text, createdAt: new Date() });
           const carrierLabel1 = CARRIER_LABELS[checkin.carrierId!] || checkin.carrierId;
@@ -1562,7 +1579,14 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
       const snap = await ref.get();
 
       // ── クレカの種別が不明な場合は聞き返す ──────────────
-      const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
+            // AIが同じカードを種別不明とノーマルの両方に入れることがあるので、二重計上を取り除く
+      const amb0 = Number((parsed.entry as any)?.creditCardAmbiguous) || 0;
+      if (amb0 > 0) {
+        const n0 = Number((parsed.entry as any).creditCardNormal) || 0;
+        const g0 = Number((parsed.entry as any).creditCardGold) || 0;
+        if (n0 + g0 >= amb0) delete (parsed.entry as any).creditCardAmbiguous;
+      }
+const ambiguousCountEarly = (parsed.entry as any)?.creditCardAmbiguous;
       if (ambiguousCountEarly && ambiguousCountEarly > 0) {
         // キャリア未指定なら今日の直前キャリアを引き継ぐ
         if (!parsed.carrierId && snap.exists) {
@@ -1717,7 +1741,7 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
       );
       const parts: string[] = [];
       // 取りこぼしがその場で分かるよう、内訳を返す
-      const ITEM_LABELS: Record<string, string> = { newContract: "新規", deviceChange: "機変", mnpIn: "MNP転入", portIn: "番号移行", netLine: "ネット", creditCardNormal: "クレカ(N)", creditCardGold: "クレカ(G)", energy: "電気", gas: "ガス" };
+      const ITEM_LABELS: Record<string, string> = { newContract: "新規", deviceChange: "機変", mnpIn: "MNP転入", portIn: "番号移行", netLine: "ネット", creditCardNormal: "クレカ(N)", creditCardGold: "クレカ(G)", energy: "電気", gas: "ガス", creditCardAmbiguous: "クレカ(種別未確認)" };
       const detail = Object.entries(parsed.entry).filter(([, v]) => Number(v) > 0).map(([k, v]) => `・${ITEM_LABELS[k] || k}：${v}件`);
       if (detail.length) parts.push(detail.join("\n"));
       if (itemTotal > 0) parts.push(`合計：${itemTotal}件`);
