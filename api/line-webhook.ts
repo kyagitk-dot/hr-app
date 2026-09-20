@@ -1682,7 +1682,12 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
 
       if (Object.keys(parsed.entry).length > 0) {
         if (idx >= 0) {
-          entries[idx] = { ...entries[idx], ...parsed.entry };
+          // 同じキャリアに再報告されたら上書きせず足し算する（獲得のたびに報告する運用のため）
+          const mergedEntry: any = { ...entries[idx] };
+          for (const [k, v] of Object.entries(parsed.entry)) {
+            mergedEntry[k] = (Number(mergedEntry[k]) || 0) + (Number(v) || 0);
+          }
+          entries[idx] = mergedEntry;
         } else {
           entries.push({ ...emptyEntry(safeCarrierId), ...parsed.entry });
         }
@@ -1711,7 +1716,11 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
         0
       );
       const parts: string[] = [];
-      if (itemTotal > 0) parts.push(`件数：${itemTotal}件`);
+      // 取りこぼしがその場で分かるよう、内訳を返す
+      const ITEM_LABELS: Record<string, string> = { newContract: "新規", deviceChange: "機変", mnpIn: "MNP転入", portIn: "番号移行", netLine: "ネット", creditCardNormal: "クレカ(N)", creditCardGold: "クレカ(G)", energy: "電気", gas: "ガス" };
+      const detail = Object.entries(parsed.entry).filter(([, v]) => Number(v) > 0).map(([k, v]) => `・${ITEM_LABELS[k] || k}：${v}件`);
+      if (detail.length) parts.push(detail.join("\n"));
+      if (itemTotal > 0) parts.push(`合計：${itemTotal}件`);
       if (parsed.peripheralAmount > 0)
         parts.push(`周辺機器：${parsed.peripheralAmount.toLocaleString()}円`);
 
