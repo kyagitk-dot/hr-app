@@ -11,7 +11,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { classifyIntent, handleConsult, hasActiveConsult } from './consult';
 import { handleWorkMemo } from './work-memo';
 import { getSettings, saveSettings, parseSettingsFromText, onboardingQuestion, describeSettings } from './user-settings';
-import { ASSISTANT } from './assistant-config';
+import { ASSISTANT, COMPANY } from './assistant-config';
 import { handlePendingReply, querySchedules, completeMemo, myStats, listMemos, deleteMemo } from './tools';
 import { logChat } from './chat-log';
 import { createRelay, deliverRelays } from './relay';
@@ -33,6 +33,26 @@ export async function handleFreeText(
 
   // 本人が話しかけてきたので、「次に話しかけてきたとき」の伝言があれば先に渡す
   try { await deliverRelays(lineUserId, 'next'); } catch (e) { console.error('deliverRelays(next)', e); }
+
+  // 管理者用: LINEからブリーフィングを手動配信する
+  if (COMPANY.adminNames.includes(userName) && /^(ブリーフィング|ブリーフ|今日のまとめ|全体まとめ)/.test(text.trim())) {
+    const all = /(全員|みんな|全社|全員に)/.test(text);
+    const base = process.env.BRIEF_BASE_URL || 'https://hr-app-xy1n.vercel.app';
+    const tok = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+    const url = all ? `${base}/api/morning-brief?force=1` : `${base}/api/morning-brief?only=${encodeURIComponent(lineUserId)}`;
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'x-brief-token': tok, 'Content-Type': 'application/json' } });
+      if (!r.ok) throw new Error('status ' + r.status);
+      const j: any = await r.json().catch(() => ({}));
+      const who = (j?.sentTo || []).join('、');
+      return finish(all
+        ? `全員にブリーフィングを送りました。${who ? `\n送信先: ${who}` : ''}`
+        : 'ブリーフィングをこのトークに送りました。全員に送るなら「ブリーフィング全員」と送ってください。', false, 'brief_manual', { all });
+    } catch (e) {
+      console.error('manual brief failed', e);
+      return finish('ブリーフィングの送信に失敗しました。しばらくしてからもう一度お試しください。', false, 'brief_manual_error');
+    }
+  }
 
   // 飲食店モード（登録された人だけ）: 日報・月次の問い合わせならここで返す
   try {
