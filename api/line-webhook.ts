@@ -1104,10 +1104,11 @@ ${content}
         // 入店報告の待ち状態が古い（30分以上前）なら、待ち状態を解除して通常処理に回す
         const pendingAt2 = pendingSnap2.data()?.updatedAt;
         const pendingMs2 = pendingAt2?.toDate ? pendingAt2.toDate().getTime() : (pendingAt2 ? new Date(pendingAt2).getTime() : 0);
-        const pendingIsStale = !pendingMs2 || (Date.now() - pendingMs2) > 30 * 60 * 1000;
+        const pendingIsStale = !pendingMs2 || (Date.now() - pendingMs2) > 12 * 60 * 60 * 1000; // 半日あけたら解除（30分では短すぎて入店報告が通らなかった）
         // 入店報告らしくない文（依頼・確認・予定・質問など）は、入店として登録せず通常処理に回す
         const NOT_CHECKIN_PENDING = /(確認|依頼|お願い|検討|請求|見積|支払|振込|入金|納品|発注|受注|予定|会議|打合|打ち合わせ|訪問|連絡|電話|メール|提出|締切|期限|明日|明後日|来週|来月|わかる|分かる|教えて|ですか|ますか|\?|？|伝えて|記録|タスク)/;
         if (pendingIsStale || NOT_CHECKIN_PENDING.test(text)) {
+          console.log("checkin pending skipped:", { stale: pendingIsStale, notCheckin: NOT_CHECKIN_PENDING.test(text), text: text.slice(0, 40) });
           await db.collection("lineUsersPending").doc(lineUserId).delete();
           // このまま下の通常処理（相談・メモ・件数報告）へ進む
         } else {
