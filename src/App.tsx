@@ -2808,7 +2808,7 @@ export default function App() {
   useEffect(()=>{
     if(!userProfile)return;
     const unsub = onSnapshot(collectionGroup(db,"daily"),snap=>{
-      setAllReports(snap.docs.map(d=>({id:d.id,...d.data()})));
+      setAllReports(snap.docs.filter(d=>d.ref.path.startsWith("salesReports/")).map(d=>({id:d.id,...d.data()}))); // 飲食の日報など、同じ daily 名の別データを除外
     });
     return unsub;
   },[userProfile]);
