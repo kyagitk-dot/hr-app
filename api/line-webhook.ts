@@ -1229,11 +1229,7 @@ ${content}
         }
         if (!carrierId) carrierId = "other";
 
-        await db.collection("lineUsersPending").doc(lineUserId).set({
-          type: "awaiting_goal_after_checkin",
-          storeName, agency, carrierId,
-          updatedAt: new Date(),
-        });
+        // 目標待ちの状態は作らない（次の件数報告を目標として飲み込んでしまうため）
 
         // 取り消し用に、今回の入店登録内容を覚えておく
         await db.collection("checkinUndo").doc(lineUserId).set({ storeName, agency, carrierId, originalText: text, createdAt: new Date() });
@@ -1243,7 +1239,7 @@ ${content}
           uid, displayName, date: todayCI,
           storeName, agency,
           defaultCarrierId: carrierId,
-          entries: [], peripheralTotal: 0,
+          // 件数(entries)は触らない：空にするとその日の実績が消える
           goalPending: true,
           checkinAt: new Date(),
           updatedAt: new Date(), createdAt: new Date(),
@@ -1267,7 +1263,7 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
           storeName: pd.storeName, agency: pd.agency,
           defaultCarrierId: pd.carrierId,
           goalPending: false,
-          entries: [], peripheralTotal: 0,
+          // 件数(entries)は触らない：空にするとその日の実績が消える
           updatedAt: new Date(), createdAt: new Date(),
         }, { merge: true });
 
