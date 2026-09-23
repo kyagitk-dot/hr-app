@@ -1229,7 +1229,7 @@ ${content}
         }
         if (!carrierId) carrierId = "other";
 
-        // 目標待ちの状態は作らない（次の件数報告を目標として飲み込んでしまうため）
+        await db.collection("lineUsersPending").doc(lineUserId).delete(); // 入店完了したので待ち状態を解除
 
         // 取り消し用に、今回の入店登録内容を覚えておく
         await db.collection("checkinUndo").doc(lineUserId).set({ storeName, agency, carrierId, originalText: text, createdAt: new Date() });
@@ -1584,7 +1584,7 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
         }
 
         if (checkin) {
-          aw        // 目標待ちの状態は作らない（次の件数報告を目標として飲み込んでしまうため）
+          aw        await db.collection("lineUsersPending").doc(lineUserId).delete(); // 入店完了したので待ち状態を解除
 ;
           // 取り消し用に、今回の入店登録内容を覚えておく
           await db.collection("checkinUndo").doc(lineUserId).set({ storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId, originalText: text, createdAt: new Date() });
