@@ -394,6 +394,8 @@ function totalOfEntry(e: any): number {
 }
 
 export default async function handler(req: any, res: any) {
+  // エラー時に本人へ返信するため、try の外で宣言する（catch からも見えるように）
+  let currentUserId: string | null = null;
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
@@ -410,7 +412,7 @@ export default async function handler(req: any, res: any) {
 
     const events = req.body.events || [];
     // エラー時に本人に一言返せるよう、直前の送信者を覚えておく
-    let currentUserId: string | null = null;
+        // 宣言は try の外（下）に移動しました
 
     for (const event of events) {
       // エラー時の最後の手段として、このイベントの送信者を記録しておく
