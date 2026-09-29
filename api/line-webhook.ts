@@ -1589,7 +1589,15 @@ const carrierLabel0 = CARRIER_LABELS[carrierId] || carrierId;
                     await db.collection("lineUsersPending").doc(lineUserId).delete(); // 入店完了したので待ち状態を解除
           // 取り消し用に、今回の入店登録内容を覚えておく
           await db.collection("checkinUndo").doc(lineUserId).set({ storeName: checkin.storeName, agency: checkin.agency, carrierId: checkin.carrierId, originalText: text, createdAt: new Date() });
-          const carrierLabel1 = CARRIER_LABELS[checkin.carrierId!] || checkin.carrierId;
+                    // 入店報告と同じように、当日のドキュメントに店舗・代理店・キャリアを保存する
+          const todayCI2 = todayStr();
+          await db.collection("salesReports").doc(uid).collection("daily").doc(todayCI2).set({
+            uid, displayName, date: todayCI2,
+            storeName: checkin.storeName, agency: checkin.agency || "",
+            defaultCarrierId: checkin.carrierId,
+            checkinAt: new Date(), updatedAt: new Date(),
+          }, { merge: true });
+const carrierLabel1 = CARRIER_LABELS[checkin.carrierId!] || checkin.carrierId;
           await replyMessage(replyToken,
             `🏪 店舗：${checkin.storeName}\n🏢 代理店：${checkin.agency || "なし"}\n📱 キャリア：${carrierLabel1}\n\n今日の目標はありますか？\n例：新規2 ネット1`
           );
