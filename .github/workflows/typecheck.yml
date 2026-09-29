@@ -1,0 +1,21 @@
+name: Type check
+
+# コードを保存（コミット）するたびに、書き間違いがないか自動で検査する
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Type check
+        run: npx tsc --noEmit
