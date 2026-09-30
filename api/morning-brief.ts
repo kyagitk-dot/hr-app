@@ -190,7 +190,7 @@ export default async function handler(req: any, res: any) {
       if (only && lineId !== only) continue; // 指定された人にだけ送る
       const name = lineName[lineId];
       const settings = await getSettings(lineId);
-      const isAdmin = adminLineIds.includes(lineId);
+      const isAdmin = adminLineIds.includes(lineId) || (!!only && lineId === only); // 手動配信(only)は、コマンドを打った本人（管理者確認済み）に必ず全体版を届ける
             // 本人設定ではなく、毎日 10 時台に「まだ処理していない人」へ送る（テスト・手動実行は従来どおり即時）
       const itsTime = force || !!only || (inWindow && !doneToday.has(lineId));
       if (!itsTime) continue;
