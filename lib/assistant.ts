@@ -45,8 +45,13 @@ export async function handleFreeText(
       if (!r.ok) throw new Error('status ' + r.status);
       const j: any = await r.json().catch(() => ({}));
       const who = (j?.sentTo || []).join('、');
+            // 実際に誰へ送れたかを見て返事を変える（送れていないのに「送りました」と言わない）
+      const sentList: string[] = Array.isArray(j?.sentTo) ? j.sentTo : [];
+      if (sentList.length === 0) {
+        return finish('ブリーフィングを送れた相手が0人でした。送る内容がなかったか、宛先が見つかっていない可能性があります。このメッセージの画面を八木さんに送ってください。', false, 'brief_manual_none', { all });
+      }
       return finish(all
-        ? `全員にブリーフィングを送りました。${who ? `\n送信先: ${who}` : ''}`
+        ? `全員にブリーフィングを送りました。\n送信先: ${who}`
         : 'ブリーフィングをこのトークに送りました。全員に送るなら「ブリーフィング全員」と送ってください。', false, 'brief_manual', { all });
     } catch (e) {
       console.error('manual brief failed', e);
