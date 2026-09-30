@@ -129,6 +129,14 @@ export default async function handler(req: any, res: any) {
     const force = req.query?.force === "1"; // テスト用：時刻・曜日を無視して全員に送る
     // only を渡すと、そのLINEユーザーにだけ送る（LINEからの手動実行用）
     const only = typeof req.query?.only === "string" ? req.query.only : "";
+    // 毎日 BRIEF_HOUR 時台に、その日まだ処理していない人へ送る（GitHubの定時実行は遅れたり飛んだりするので、時間帯で判定して取りこぼしを防ぐ）
+    const BRIEF_HOUR = 10;
+    const BRIEF_UNTIL = 13; // この時刻以降は送らない（夜に遅れて送るのを防ぐ）
+    const inWindow = hour >= BRIEF_HOUR && hour < BRIEF_UNTIL;
+    const doneToday = new Set<string>();
+    if (inWindow && !force && !only) {
+      (await db.collection("brief_sent").where("date", "==", today).get()).docs.forEach((d) => doneToday.add(String(d.data().lineId)));
+    }
 
     // 夜間に保留していた通知をまとめて送る（夜間帯は flushDeferred 側で何もしない）
     let flushed = 0;
@@ -183,12 +191,17 @@ export default async function handler(req: any, res: any) {
       const name = lineName[lineId];
       const settings = await getSettings(lineId);
       const isAdmin = adminLineIds.includes(lineId);
-      const itsTime = force || !!only || (settings.briefHour === hour && settings.briefDays.includes(dow));
+            // 本人設定ではなく、毎日 10 時台に「まだ処理していない人」へ送る（テスト・手動実行は従来どおり即時）
+      const itsTime = force || !!only || (inWindow && !doneToday.has(lineId));
       if (!itsTime) continue;
+      // 今日はこの人を処理済みにする（同じ日に二重に送らない）
+      if (!force && !only) await db.collection("brief_sent").doc(`${today}_${lineId}`).set({ date: today, lineId, at: new Date() });
 
       if (isAdmin) {
         // 全体版
-        const overall = memos.length
+                // 自動配信では、未完了メモが無いときは送らない（手動実行・テストでは従来どおり「メモなし」を返す）
+        if (!memos.length && !force && !only) continue;
+const overall = memos.length
           ? await writeBrief(buildFacts(memos, today, true), today, "overall", name, settings)
           : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。予定や約束をこのLINEに送ってもらえれば、ここに載せていきます。`;
         await pushText(lineId, overall);
