@@ -30,12 +30,19 @@ function daysBetween(a: string, b: string): number {
 const NUDGE_DAYS: Record<number, number[]> = { 0: [], 1: [3], 2: [2, 5], 3: [1, 3, 5] };
 
 // ── LINE push ─────────────────────────────────────────
-async function pushText(to: string, text: string) {
-  await fetch("https://api.line.me/v2/bot/message/push", {
+async function pushText(to: string, text: string): Promise<boolean> {
+  // LINEの返事を確認する。以前は返事を見ていなかったため、送れていなくても「送信済み」と数えていた
+  const res = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${ACCESS_TOKEN}` },
     body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error("LINE push failed:", res.status, body.slice(0, 300));
+    return false;
+  }
+  return true;
 }
 
 async function claude(system: string, user: string, maxTokens = 900): Promise<string | null> {
@@ -183,6 +190,7 @@ export default async function handler(req: any, res: any) {
     (await db.collection("nudges").where("createdAt", ">=", since).get()).docs.forEach((d) => active.add(d.data().lineUserId));
 
     const sentTo: string[] = [];
+    const failed: string[] = []; // LINEに送信を断られた人（送れていないのに成功扱いにしない）
     const nudged: string[] = [];
 
     for (const lineId of Object.keys(lineName)) {
@@ -204,16 +212,16 @@ export default async function handler(req: any, res: any) {
 const overall = memos.length
           ? await writeBrief(buildFacts(memos, today, true), today, "overall", name, settings)
           : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。予定や約束をこのLINEに送ってもらえれば、ここに載せていきます。`;
-        await pushText(lineId, overall);
-        sentTo.push(`${name}(全体版)`);
+        const okOverall = await pushText(lineId, overall);
+        if (okOverall) sentTo.push(`${name}(全体版)`); else failed.push(name);
         continue;
       }
 
       if (personal[lineId]) {
         // 個人版
         const brief = await writeBrief(buildFacts(personal[lineId], today, false), today, "personal", name, settings);
-        await pushText(lineId, brief);
-        sentTo.push(name);
+        const okBrief = await pushText(lineId, brief);
+        if (okBrief) sentTo.push(name); else failed.push(name);
         continue;
       }
 
@@ -232,7 +240,7 @@ const overall = memos.length
     if (sentTo.length || nudged.length) {
       await db.collection("morning_briefs").add({ date: today, hour, memoCount: memos.length, sentTo, nudged, createdAt: new Date() });
     }
-    res.status(200).json({ ok: true, flushed, date: today, hour, memoCount: memos.length, sentTo, nudged });
+    res.status(200).json({ ok: true, flushed, failed, date: today, hour, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
     console.error("scheduler error:", err);
     res.status(500).json({ ok: false, error: String(err) });
