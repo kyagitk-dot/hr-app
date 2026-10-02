@@ -126,16 +126,20 @@ ${facts}`;
 
 export default async function handler(req: any, res: any) {
   const auth = req.headers["x-brief-token"];
-  if (!ACCESS_TOKEN || auth !== ACCESS_TOKEN) { res.status(401).send("Unauthorized"); return; }
+  // Vercel Cron は x-brief-token を付けられないため、CRON_SECRET（Authorization: Bearer）でも認証できるようにする
+  const cronSecret = process.env.CRON_SECRET;
+  const viaCron = !!cronSecret && req.headers["authorization"] === `Bearer ${cronSecret}`;
+  const viaToken = !!ACCESS_TOKEN && auth === ACCESS_TOKEN;
+  if (!viaToken && !viaCron) { res.status(401).send("Unauthorized"); return; }
 
   try {
     const now = jstNow();
     const today = jstToday();
     const hour = now.getUTCHours();
     const dow = now.getUTCDay();
-    const force = req.query?.force === "1"; // テスト用：時刻・曜日を無視して全員に送る
+    const force = viaToken && req.query?.force === "1"; // テスト用：時刻・曜日を無視して全員に送る
     // only を渡すと、そのLINEユーザーにだけ送る（LINEからの手動実行用）
-    const only = typeof req.query?.only === "string" ? req.query.only : "";
+    const only = !viaToken ? "" : (typeof req.query?.only === "string" ? req.query.only : ""); // Cron経由のときは宛先指定を受け付けない
     // 毎日 BRIEF_HOUR 時台に、その日まだ処理していない人へ送る（GitHubの定時実行は遅れたり飛んだりするので、時間帯で判定して取りこぼしを防ぐ）
     const BRIEF_HOUR = 10;
     const BRIEF_UNTIL = 13; // この時刻以降は送らない（夜に遅れて送るのを防ぐ）
