@@ -115,6 +115,25 @@ ${list}`, text, 10,
   return `✅ 完了にしました：${m.title}${m.dueDate ? `（期日${m.dueDate}）` : ''}\nお疲れさまでした。`;
 }
 
+// ── 自分が出した指示の一覧（相手が担当で、まだ終わっていないもの）──
+export async function listInstructions(lineUserId: string, userName: string): Promise<string> {
+  const db = getFirestore();
+  const snap = await db.collection('work_memos').where('status', 'in', ['open', 'pending']).get();
+  const today = ymd(jstNow());
+  const mine = snap.docs
+    .map((d) => d.data())
+    .filter((m) => m.createdBy === lineUserId && m.assignee && m.assignee !== userName)
+    .sort((a, b) => String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31')));
+  if (!mine.length) return '今、あなたが出していて未完了の指示はありません。';
+  const lines = mine.map((m, i) => {
+    const parts = [`${m.assignee}さん：${m.title}`];
+    if (m.dueDate) parts.push(`期日:${m.dueDate}${m.dueDate < today ? '（期限切れ）' : ''}`);
+    if (m.status === 'pending') parts.push('（まだ了解の返事なし）');
+    return `${i + 1}. ${parts.join(' / ')}`;
+  });
+  return `📌 あなたが出した未完了の指示（${mine.length}件）\n${lines.join('\n')}`;
+}
+
 // ── メモ一覧の表示 ─────────────────────────────────────
 export async function listMemos(lineUserId: string, userName: string): Promise<string> {
   const db = getFirestore();
