@@ -364,7 +364,7 @@ const LoginPage = ({onLogin}) => {
 
 const Dashboard = ({users,evals,onNavigate,onSelectUser,allReports}) => {
   const isMobile = useIsMobile();
-  const usersWithScore = users.map((u,i)=>{const e=evals[u.id]||{};const ms=calcScore(e.managerScores||{},u.grade);return {...u,idx:i,managerScore:ms,rank:e.managerScores&&Object.keys(e.managerScores).length?calcRank(ms):null,status:e.status||"none"};});
+  const usersWithScore = users.map((u,i)=>{const e=evals[u.id]||{};const ms=calcScore(e.managerScores||{},u.grade);return {...u,idx:i,managerScore:ms,rank:e.managerScores&&Object.keys(e.managerScores).length?calcRank(ms):null,status:e.managerStatus||"none"};});
   const done = usersWithScore.filter(u=>u.status==="done").length;
   const scored = usersWithScore.filter(u=>u.rank);
   const avgScore = scored.length?Math.round(scored.reduce((a,u)=>a+u.managerScore,0)/scored.length):null;
@@ -536,7 +536,7 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
         <SelectEl value={selectedUserId||user?.id} onChange={setSelectedUserId} options={users.map(u=>({value:u.id,label:`${u.name}（${u.grade}）`}))} style={{flex:1,minWidth:140}}/>
         {saving&&<span style={{fontSize:12,color:C.gray[400]}}>保存中...</span>}
-        <Btn small primary onClick={()=>updateField("status","done")} disabled={eval_.status==="done"}>提出する</Btn>
+        <Btn small primary onClick={()=>updateField(prefix+"Status","done")} disabled={eval_[prefix+"Status"]==="done"}>{eval_[prefix+"Status"]==="done"?"提出済み":"提出する"}</Btn>
       </div>
       <div style={{background:C.purple[50],border:`1px solid ${C.purple[200]}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.purple[800]}}><strong>{user?.grade}</strong> — {gradeDefs[user?.grade]}</div>
       <div style={{display:"flex",gap:6,background:C.gray[50],borderRadius:10,padding:4,marginBottom:14,width:"fit-content"}}>
@@ -554,7 +554,7 @@ const EvaluationPage = ({users,evals,onSaveEval,selectedUserId,setSelectedUserId
                 <div key={c.no} style={{marginBottom:i<items.length-1?16:0,paddingBottom:i<items.length-1?16:0,borderBottom:i<items.length-1?`0.5px solid ${C.gray[50]}`:"none"}}>
                   <div style={{display:"flex",alignItems:"start",justifyContent:"space-between",marginBottom:8,gap:8}}>
                     <div style={{flex:1}}><div style={{fontSize:12,color:C.gray[400],marginBottom:2}}>No.{c.no} · 配点{c.points}点</div><div style={{fontSize:13,color:C.gray[800],lineHeight:1.5}}>{c.item}</div></div>
-                    <div style={{flexShrink:0,textAlign:"right"}}><ScoreInput value={sc} onChange={val=>{const newScores={...scores,[c.no]:val};updateField(prefix+"Scores",newScores);}} readonly={eval_.status==="done"}/>{sc>0&&<div style={{fontSize:11,color:C.purple[600],marginTop:3,textAlign:"right"}}>{itemScore}点獲得</div>}</div>
+                    <div style={{flexShrink:0,textAlign:"right"}}><ScoreInput value={sc} onChange={val=>{const newScores={...scores,[c.no]:val};updateField(prefix+"Scores",newScores);}} readonly={eval_[prefix+"Status"]==="done"}/>{sc>0&&<div style={{fontSize:11,color:C.purple[600],marginTop:3,textAlign:"right"}}>{itemScore}点獲得</div>}</div>
                   </div>
                   <Textarea rows={2} value={eval_[prefix+"Comments"]?.[c.no]||""} onChange={v=>updateField(prefix+"Comments",{...(eval_[prefix+"Comments"]||{}),[c.no]:v})} placeholder={tab==="manager"?"上司評価コメント・根拠を入力":"自己評価コメント・根拠を入力"}/>
                 </div>
@@ -1607,10 +1607,10 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
           {selfRank&&<Card style={{borderLeft:`3px solid ${rankColor(selfRank)[400]}`}}><div style={{display:"flex",alignItems:"center",gap:16}}><div><div style={{fontSize:11,color:C.gray[400],marginBottom:2}}>自己評価 総合点</div><div style={{fontSize:24,fontWeight:700,color:C.gray[800]}}>{totalSelf}<span style={{fontSize:12,color:C.gray[400]}}>/100</span></div></div><div><div style={{fontSize:11,color:C.gray[400],marginBottom:4}}>ランク</div><RankBadge rank={selfRank} size="lg"/></div></div></Card>}
           {Object.entries(categoryGroups).map(([cat,items])=>{
             const cc=categoryColor(cat);
-            return(<Card key={cat}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:cc[50],color:cc[800],fontWeight:500}}>{cat}</span></div>{items.map((c,i)=><div key={c.no} style={{marginBottom:i<items.length-1?14:0,paddingBottom:i<items.length-1?14:0,borderBottom:i<items.length-1?`0.5px solid ${C.gray[50]}`:"none"}}><div style={{display:"flex",alignItems:"start",justifyContent:"space-between",marginBottom:6,gap:8}}><div style={{flex:1}}><div style={{fontSize:11,color:C.gray[400],marginBottom:2}}>No.{c.no} · 配点{c.points}点</div><div style={{fontSize:13,color:C.gray[800],lineHeight:1.5}}>{c.item}</div></div><ScoreInput value={selfScores[c.no]||0} onChange={val=>updateField("selfScores",{...selfScores,[c.no]:val})} readonly={evalData.status==="done"}/></div><Textarea rows={2} value={evalData.selfComments?.[c.no]||""} onChange={v=>updateField("selfComments",{...(evalData.selfComments||{}),[c.no]:v})} placeholder="自己評価コメント・根拠を入力"/></div>)}</Card>);
+            return(<Card key={cat}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontSize:11,padding:"2px 10px",borderRadius:12,background:cc[50],color:cc[800],fontWeight:500}}>{cat}</span></div>{items.map((c,i)=><div key={c.no} style={{marginBottom:i<items.length-1?14:0,paddingBottom:i<items.length-1?14:0,borderBottom:i<items.length-1?`0.5px solid ${C.gray[50]}`:"none"}}><div style={{display:"flex",alignItems:"start",justifyContent:"space-between",marginBottom:6,gap:8}}><div style={{flex:1}}><div style={{fontSize:11,color:C.gray[400],marginBottom:2}}>No.{c.no} · 配点{c.points}点</div><div style={{fontSize:13,color:C.gray[800],lineHeight:1.5}}>{c.item}</div></div><ScoreInput value={selfScores[c.no]||0} onChange={val=>updateField("selfScores",{...selfScores,[c.no]:val})} readonly={evalData.selfStatus==="done"}/></div><Textarea rows={2} value={evalData.selfComments?.[c.no]||""} onChange={v=>updateField("selfComments",{...(evalData.selfComments||{}),[c.no]:v})} placeholder="自己評価コメント・根拠を入力"/></div>)}</Card>);
           })}
-          {evalData.status!=="done"&&<Btn primary onClick={()=>updateField("status","done")} style={{width:"100%",justifyContent:"center",marginTop:4}}>自己評価を提出する</Btn>}
-          {evalData.status==="done"&&<div style={{textAlign:"center",padding:"10px",fontSize:13,color:C.green[400]}}>✓ 提出済みです</div>}
+          {evalData.selfStatus!=="done"&&<Btn primary onClick={()=>updateField("selfStatus","done")} style={{width:"100%",justifyContent:"center",marginTop:4}}>自己評価を提出する</Btn>}
+          {evalData.selfStatus==="done"&&<div style={{textAlign:"center",padding:"10px",fontSize:13,color:C.green[400]}}>✓ 提出済みです</div>}
         </div>
       )}
       {page==="myresult"&&(
