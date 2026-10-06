@@ -12,7 +12,9 @@ import { pushOrDefer } from './push';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 const ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
-const MODEL = 'claude-haiku-4-5';
+const MODEL_FAST = 'claude-haiku-4-5';  // 意図の判定（速さ優先）
+const MODEL_SMART = 'claude-sonnet-5';  // 相談の返事（精度優先）
+const MODEL = MODEL_FAST;
 const SESSION_COLLECTION = 'consult_sessions';   // 会話の続き（本人ごと）
 const ESCALATION_COLLECTION = 'consult_escalations';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;       // 2時間会話がなければ新しい相談として扱う
@@ -20,7 +22,7 @@ const MAX_TURNS = 12;                            // 履歴として持つ最大�
 
 type Turn = { role: 'user' | 'assistant'; content: string };
 
-async function claude(system: string, messages: Turn[], maxTokens = 800): Promise<string> {
+async function claude(system: string, messages: Turn[], maxTokens = 800, model: string = MODEL): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -28,7 +30,7 @@ async function claude(system: string, messages: Turn[], maxTokens = 800): Promis
       'x-api-key': ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }),
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
   });
   const data = await res.json();
   return (data.content ?? []).map((c: any) => c.text ?? '').join('').trim();
@@ -44,7 +46,7 @@ async function pushText(to: string, text: string) {
 // memo    : 予定・約束・支払い・案件の動きなど「記録しておくべきこと」
 // consult : 相談・質問・悩み・雑談など「返事がほしいこと」
 export type Intent = 'report' | 'memo' | 'consult' | 'schedule' | 'done' | 'stats' | 'list' | 'delete' | 'relay';
-export async function classifyIntent(text: string, inSession: boolean): Promise<Intent> {
+export async function classifyIntent(text: string, inSession: boolean, recent: string[] = []): Promise<Intent> {
   const system = `${COMPANY.name}（${COMPANY.business}）の社員がLINEで送ってきた文章を分類します。次のどれか1語だけを返してください。
 report  : 販売件数の報告。キャリア名（docomo/au/SoftBank/ワイモバイル/UQなど）や「新規3件」「MNP1」「機変2 クレカ1」のように、項目と件数だけを並べた短い文。店舗名が付くこともある
 memo    : 予定・約束・期日・支払い・請求・取引先とのやり取りの記録など、「覚えておいてほしい事実や予定」を書いている文。「来週A社に見積もり」「25日に家賃の支払い」「明日B社と打ち合わせ」など
@@ -57,7 +59,9 @@ relay   : 「〇〇さんに△△と伝えて」「〇〇が入店報告した�
 consult : 質問・相談・悩み・意見を求めている・雑談・報告への返事など、「返事や助言がほしい」文
 判断のコツ：件数と項目名だけの無機質な文は report。文章になっていて予定や約束を語っていれば memo（他人に予定を入れる依頼「田中さんに来週B社訪問入れて」も memo）。問いかけや気持ちが入っていれば consult。
 ${inSession ? '注意：この人は直前まで相談中です。件数報告でなければ consult にしてください。' : '迷ったら consult。'}`;
-  const out = (await claude(system, [{ role: 'user', content: text }], 5)).toLowerCase();
+  // 直前のやり取り（省略可）を添える：「自分の分だけ」のような短い返事の意味を、前の話から読み取れるようにする
+  const ctx = recent.length ? `【直前のやり取り（古い→新しい）】\n${recent.slice(-4).join('\n')}\n\n【今回の文】\n` : '';
+  const out = (await claude(system, [{ role: 'user', content: ctx + text }], 5, MODEL_FAST)).toLowerCase();
   for (const k of ['report', 'memo', 'schedule', 'done', 'stats', 'list', 'delete', 'relay'] as Intent[]) if (out.startsWith(k)) return k;
   return 'consult';
 }
@@ -126,6 +130,19 @@ export async function handleConsult(text: string, lineUserId: string, userName: 
 - 会社の制度や数字など、あなたが知らないことは知ったかぶりせず「社長か上司に確認したほうがいい」と伝える
 - 相談内容は本人とあなたの間だけのもの。ただし、下記の場合は escalate を true にする
 
+
+【あなた（啓吾くん）自身の機能と使い方】
+社員から「このボットで何ができる？」「どう送ればいい？」と聞かれたら、次の内容で正確に答える。ここに無いことは知ったかぶりしない。
+- 入店報告：「入店報告」と送る→店舗名・キャリア・代理店名を送る（この2通で入店完了）。代理店は必須
+- 件数報告：「MNP1件 クレカ1」のように送る。送るたびに足し算され、返事で内訳が分かる。クレカは「ノーマル」か「ゴールド」を聞かれることがある
+- 目標：「目標 新規2 ネット1」のように、頭に「目標」を付けて送る
+- 訂正：「取り消し」で直前の報告を取り消す。「MNPを2件に修正」で件数を直す。「今日の実績」で累計を確認する
+- 退店報告：「退店報告」と送る
+- メモ・予定：「来週A社に見積もり」のように送ると記録され、「予定確認」で一覧が見られる。「1番を削除」で消せる
+- ブリーフィング：毎朝10時台に、未完了のメモ・予定がある人へ届く
+- 仕組みの不具合（返事が来ない、数字が合わない、エラーが出る等）を聞かれたら、原因を推測して断定しない。「画面を八木さんに送ってください。時間が経つと原因を追えなくなります」と案内する
+- 「飲食モード」は、飲食店の担当者として登録された人だけが使う日報の機能。登録は管理者（八木さん）が行う
+
 【会社の前提知識】
 ${ASSISTANT.glossary}
 
@@ -138,7 +155,7 @@ ${context ? `【${userName}さんの状況】\n${context}\n` : ''}
 必ず以下のJSONだけを返してください（前置き・Markdown不要）：
 {"reply": "本人への返事", "escalate": true|false, "summary": "escalateがtrueのとき、社長向けの要約（本人のプライバシーに配慮し、事実と必要な対応だけを3行以内で）。falseならnull"}`;
 
-  const raw = await claude(system, history, 900);
+  const raw = await claude(system, history, 2500, MODEL_SMART); // Sonnet 5 は考える分もトークンを使うので多めに取る
   let reply = raw;
   let escalate = false;
   let summary: string | null = null;
