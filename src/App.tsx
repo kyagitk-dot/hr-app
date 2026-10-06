@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { auth, db } from "./firebase";
 import {
   signInWithEmailAndPassword,
@@ -174,9 +174,25 @@ const Card = ({children,style}) => <div style={{background:"#fff",border:`0.5px 
 const CardTitle = ({children,action}) => <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}><div style={{fontSize:13,fontWeight:500,color:C.gray[800]}}>{children}</div>{action}</div>;
 const MetricCard = ({label,value,sub,accent}) => <div style={{background:accent?accent[50]:C.gray[50],borderRadius:10,padding:"12px 14px",border:accent?`1px solid ${accent[200]}`:"none"}}><div style={{fontSize:11,color:accent?accent[600]:C.gray[400],marginBottom:3}}>{label}</div><div style={{fontSize:22,fontWeight:600,color:accent?accent[800]:C.gray[800]}}>{value}</div>{sub&&<div style={{fontSize:11,color:accent?accent[600]:C.gray[400],marginTop:1}}>{sub}</div>}</div>;
 const Btn = ({children,onClick,primary,small,danger,disabled,style}) => <button onClick={onClick} disabled={disabled} style={{padding:small?"6px 12px":"8px 16px",fontSize:small?12:13,borderRadius:8,cursor:disabled?"not-allowed":"pointer",border:`0.5px solid ${danger?C.coral[400]:primary?C.purple[400]:C.gray[200]}`,background:primary?C.purple[400]:danger?C.coral[50]:"transparent",color:primary?"#fff":danger?C.coral[800]:C.gray[800],display:"inline-flex",alignItems:"center",gap:5,opacity:disabled?0.5:1,fontFamily:"inherit",...style}}>{children}</button>;
-const Input = ({value,onChange,placeholder,type="text",style}) => <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"9px 11px",fontSize:14,border:`0.5px solid ${C.gray[200]}`,borderRadius:8,background:"#fff",color:C.gray[800],outline:"none",fontFamily:"inherit",boxSizing:"border-box",...style}}/>;
+// 入力欄の文字は欄自身が持つ（保存→Firestoreからの戻り値で上書きされると、日本語変換中の文字が重複するため）
+// 変換中は保存せず、確定時・フォーカスが外れた時に保存する。呼び出し側の onChange(値) の形はそのまま
+const useBufferedText = (value, onChange) => {
+  const [v, setV] = useState(value ?? "");
+  const focused = useRef(false);
+  const composing = useRef(false);
+  useEffect(() => { if (!focused.current) setV(value ?? ""); }, [value]);
+  return {
+    value: v,
+    onFocus: () => { focused.current = true; },
+    onBlur: (e) => { focused.current = false; if (e.target.value !== (value ?? "")) onChange(e.target.value); },
+    onCompositionStart: () => { composing.current = true; },
+    onCompositionEnd: (e) => { composing.current = false; onChange(e.currentTarget.value); },
+    onChange: (e) => { setV(e.target.value); if (!composing.current) onChange(e.target.value); },
+  };
+};
+const Input = ({value,onChange,placeholder,type="text",style}) => { const b = useBufferedText(value,onChange); return <input type={type} {...b} placeholder={placeholder} style={{width:"100%",padding:"9px 11px",fontSize:14,border:`0.5px solid ${C.gray[200]}`,borderRadius:8,background:"#fff",color:C.gray[800],outline:"none",fontFamily:"inherit",boxSizing:"border-box",...style}}/> };
 const SelectEl = ({value,onChange,options,style}) => <select value={value} onChange={e=>onChange(e.target.value)} style={{padding:"8px 10px",fontSize:13,borderRadius:8,border:`0.5px solid ${C.gray[200]}`,background:"#fff",color:C.gray[800],cursor:"pointer",outline:"none",fontFamily:"inherit",...style}}>{options.map(o=><option key={o.value??o} value={o.value??o}>{o.label??o}</option>)}</select>;
-const Textarea = ({value,onChange,rows=3,placeholder}) => <textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} placeholder={placeholder} style={{width:"100%",padding:"9px 11px",fontSize:13,border:`0.5px solid ${C.gray[200]}`,borderRadius:8,background:"#fff",color:C.gray[800],resize:"vertical",fontFamily:"inherit",outline:"none",lineHeight:1.6,boxSizing:"border-box"}}/>;
+const Textarea = ({value,onChange,rows=3,placeholder}) => { const b = useBufferedText(value,onChange); return <textarea {...b} rows={rows} placeholder={placeholder} style={{width:"100%",padding:"9px 11px",fontSize:13,border:`0.5px solid ${C.gray[200]}`,borderRadius:8,background:"#fff",color:C.gray[800],resize:"vertical",fontFamily:"inherit",outline:"none",lineHeight:1.6,boxSizing:"border-box"}}/> };
 const Modal = ({title,onClose,children}) => <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}} onClick={e=>e.target===e.currentTarget&&onClose()}><div style={{background:"#fff",borderRadius:14,width:"100%",maxWidth:480,maxHeight:"90vh",overflow:"auto"}}><div style={{padding:"14px 18px",borderBottom:`0.5px solid ${C.gray[100]}`,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"#fff"}}><div style={{fontSize:15,fontWeight:500,color:C.gray[800]}}>{title}</div><button onClick={onClose} style={{border:"none",background:"none",fontSize:20,cursor:"pointer",color:C.gray[400]}}>×</button></div><div style={{padding:"16px 18px"}}>{children}</div></div></div>;
 const ScoreInput = ({value,onChange,readonly}) => <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>!readonly&&onChange&&onChange(value===n?0:n)} style={{width:32,height:32,borderRadius:6,border:"none",cursor:readonly?"default":"pointer",background:n<=value?C.purple[400]:C.gray[100],color:n<=value?"#fff":C.gray[400],fontSize:13,fontWeight:600,transition:"all 0.1s",fontFamily:"inherit"}}>{n}</button>)}</div>;
 
