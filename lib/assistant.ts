@@ -12,7 +12,7 @@ import { classifyIntent, handleConsult, hasActiveConsult } from './consult';
 import { handleWorkMemo } from './work-memo';
 import { getSettings, saveSettings, parseSettingsFromText, onboardingQuestion, describeSettings } from './user-settings';
 import { ASSISTANT, COMPANY } from './assistant-config';
-import { handlePendingReply, querySchedules, completeMemo, myStats, listMemos, deleteMemo } from './tools';
+import { handlePendingReply, querySchedules, completeMemo, myStats, listMemos, deleteMemo, listInstructions } from './tools';
 import { logChat } from './chat-log';
 import { createRelay, deliverRelays } from './relay';
 import { handleRestaurant } from './restaurant';
@@ -33,6 +33,11 @@ export async function handleFreeText(
 
   // 本人が話しかけてきたので、「次に話しかけてきたとき」の伝言があれば先に渡す
   try { await deliverRelays(lineUserId, 'next'); } catch (e) { console.error('deliverRelays(next)', e); }
+
+  // 自分が出した指示の一覧（決まった言葉で直接呼ぶ。AIの判定には通さない）
+  if (/^(指示一覧|指示の一覧|出した指示|指示確認|指示リスト)[？?。！!\s]*$/.test(text.trim())) {
+    return finish(await listInstructions(lineUserId, userName), false, 'instruction_list');
+  }
 
   // 管理者用: LINEからブリーフィングを手動配信する
   if (COMPANY.adminNames.includes(userName) && /^(ブリーフィング|ブリーフ|今日のまとめ|全体まとめ)/.test(text.trim())) {
