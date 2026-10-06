@@ -206,8 +206,8 @@ export default async function handler(req: any, res: any) {
             // 本人設定ではなく、毎日 10 時台に「まだ処理していない人」へ送る（テスト・手動実行は従来どおり即時）
       const itsTime = force || !!only || (inWindow && !doneToday.has(lineId));
       if (!itsTime) continue;
-      // 今日はこの人を処理済みにする（同じ日に二重に送らない）
-      if (!force && !only) await db.collection("brief_sent").doc(`${today}_${lineId}`).set({ date: today, lineId, at: new Date() });
+      // 処理済みの印は送信に成功したときだけ立てる（失敗・未処理の人は次の起動で再送。同じ日に二重には送らない）
+      const markDone = async () => { if (!force && !only) await db.collection("brief_sent").doc(`${today}_${lineId}`).set({ date: today, lineId, at: new Date() }); };
 
       if (isAdmin) {
         // 全体版
@@ -217,7 +217,7 @@ const overall = memos.length
           ? await writeBrief(buildFacts(memos, today, true), today, "overall", name, settings)
           : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。予定や約束をこのLINEに送ってもらえれば、ここに載せていきます。`;
         const okOverall = await pushText(lineId, overall);
-        if (okOverall) sentTo.push(`${name}(全体版)`); else failed.push(name);
+        if (okOverall) { sentTo.push(`${name}(全体版)`); await markDone(); } else failed.push(name);
         continue;
       }
 
@@ -225,7 +225,7 @@ const overall = memos.length
         // 個人版
         const brief = await writeBrief(buildFacts(personal[lineId], today, false), today, "personal", name, settings);
         const okBrief = await pushText(lineId, brief);
-        if (okBrief) sentTo.push(name); else failed.push(name);
+        if (okBrief) { sentTo.push(name); await markDone(); } else failed.push(name);
         continue;
       }
 
@@ -244,7 +244,7 @@ const overall = memos.length
     if (sentTo.length || nudged.length) {
       await db.collection("morning_briefs").add({ date: today, hour, memoCount: memos.length, sentTo, nudged, createdAt: new Date() });
     }
-    res.status(200).json({ ok: true, flushed, failed, date: today, hour, memoCount: memos.length, sentTo, nudged });
+    res.status(failed.length ? 502 : 200).json({ ok: failed.length === 0, flushed, failed, date: today, hour, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
     console.error("scheduler error:", err);
     res.status(500).json({ ok: false, error: String(err) });
