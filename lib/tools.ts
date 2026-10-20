@@ -167,6 +167,14 @@ export async function deleteMemo(text: string, lineUserId: string, userName: str
     return `🗑️ ${userName}さんの未完了メモ・予定を${mine.length}件、すべて削除しました。\n\n${list}`;
   }
 
+  // 「1番と2番を削除」「1,2を削除」のように番号が2つ以上書かれていたら、AIに頼らず全部拾って削除する
+  const nums = Array.from(new Set((text.match(/[0-9]+/g) || []).map((s) => parseInt(s, 10)))).filter((n) => n >= 1 && n <= mine.length);
+  if (nums.length >= 2) {
+    nums.sort((a, b) => a - b);
+    const removed: string[] = [];
+    for (const n of nums) { const d = mine[n - 1]; removed.push(`${n}. ${d.data().title}`); await d.ref.delete(); }
+    return `🗑️ ${nums.length}件を削除しました。\n${removed.join('\n')}`;
+  }
   const pick = await claude(
     `ユーザーが「削除して」と言っている件が、以下のどれに当たるかを判断し、番号だけを返してください。該当がなければ 0。複数なら最初の1つ。\n${list}`, text, 10,
   );
