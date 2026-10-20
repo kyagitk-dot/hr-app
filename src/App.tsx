@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { auth, db } from "./firebase";
+import { MyWorkReport, AllWorkReports } from "./WorkReportPage";
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -1594,13 +1595,15 @@ const EmployeeView = ({currentUser,userProfile,onLogout,onSaveEval,periods,grade
     {id:"sales",label:"販売実績",shortLabel:"実績",icon:"chart"},
     {id:"mytraining",label:"研修PDCA",shortLabel:"研修",icon:"training"},
     ...(userProfile?.buddyOf?.length>0?[{id:"buddytraining",label:"バディ入力",shortLabel:"バディ",icon:"users"}]:[]),
+    {id:"workreport",label:"日報",shortLabel:"日報",icon:"edit"},
     {id:"help",label:"使い方",shortLabel:"ヘルプ",icon:"help"},
   ];
-  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績",mytraining:"研修PDCA",buddytraining:"バディ担当 研修PDCA",help:"使い方を検索"};
+  const pageTitles = {myeval:"自己評価を入力",myresult:"評価結果",sales:"販売実績",workreport:"業務日報",mytraining:"研修PDCA",buddytraining:"バディ担当 研修PDCA",help:"使い方を検索"};
 
   return (
     <AppShell nav={EMP_NAV} page={page} setPage={setPage} currentUser={{...currentUser,displayName:userProfile?.name,role:"member",grade:userProfile?.grade}} activePeriod={activePeriod} onLogout={onLogout} pageTitle={pageTitles[page]}>
       {page==="sales"&&<SalesPage currentUser={currentUser} userProfile={userProfile} isManager={false} allReports={allReports}/>}
+      {page==="workreport"&&<MyWorkReport uid={currentUser.uid} displayName={userProfile?.name||currentUser.email||""}/>}
       {page==="myeval"&&(
         <div>
           <div style={{background:C.purple[50],border:`1px solid ${C.purple[200]}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.purple[800]}}><strong>{userProfile?.grade}</strong> — {gradeDefs[userProfile?.grade]}</div>
@@ -2761,6 +2764,7 @@ const MANAGER_NAV = [
   {id:"training",label:"研修PDCA",shortLabel:"研修",icon:"training"},
   {id:"linesend",label:"LINE送信",shortLabel:"LINE",icon:"linesend"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
+  {id:"workreport",label:"業務日報",shortLabel:"日報",icon:"edit"},
   {id:"help",label:"使い方",shortLabel:"ヘルプ",icon:"help"},
   {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
@@ -2856,7 +2860,7 @@ export default function App() {
   const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",help:"使い方を検索",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",workreport:"業務日報",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",help:"使い方を検索",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
@@ -2869,6 +2873,7 @@ export default function App() {
       {page==="results"&&<ResultsPage users={users} evals={evals}/>}
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports} users={users}/>}
+      {page==="workreport"&&<AllWorkReports managerName={userProfile?.name||authUser.email||"管理者"} users={users}/>}
       {page==="interview"&&<InterviewPage users={users}/>}
       {page==="training"&&<TrainingPDCAPage users={users}/>}
       {page==="linesend"&&<LineSendPage/>}
