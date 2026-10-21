@@ -115,6 +115,7 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
   const [later, setLater] = useState<Plan[]>([]);
   const [comments, setComments] = useState<Report["comments"]>([]);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [view, setView] = useState<"mine" | "all">("mine");
   const [mine, setMine] = useState<Report[]>([]);
 
   // 日付を変えたら、その日の自分の日報（なければ、結果が未入力の約束）を読み込む
@@ -197,11 +198,27 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
     } catch (e) { setMsg({ kind: "err", text: explain(e) }); }
   };
 
+  const switcher = (
+    <div style={{ marginBottom: 12 }}>
+      <Chip on={view === "mine"} label="自分の日報" onClick={() => setView("mine")} />
+      <Chip on={view === "all"} label="みんなの日報" onClick={() => setView("all")} />
+    </div>
+  );
+  if (view === "all") {
+    return (
+      <div>
+        {switcher}
+        <AllWorkReports managerName={displayName} users={[]} canComment={false} showRates={false} />
+      </div>
+    );
+  }
+
   const r7 = calc(mine, daysAgo(6));
   const r30 = calc(mine, daysAgo(29));
 
   return (
     <div>
+      {switcher}
       <div style={S.card}>
         <div style={S.title}>約束の達成率（自動で計算されます）</div>
         <div style={{ fontSize: 14, color: "#2C2C2A" }}>直近7日：{pct(r7)}　／　直近30日：{pct(r30)}</div>
@@ -290,7 +307,7 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
 }
 
 // ── 管理者用：全員の達成率・その日の日報・コメント・未提出 ──
-export function AllWorkReports({ managerName, users }: { managerName: string; users: any[] }) {
+export function AllWorkReports({ managerName, users, canComment = true, showRates = true }: { managerName: string; users: any[]; canComment?: boolean; showRates?: boolean }) {
   const [date, setDate] = useState<string>(todayStr());
   const [rows, setRows] = useState<Report[]>([]);
   const [recent, setRecent] = useState<Report[]>([]);
@@ -336,7 +353,7 @@ export function AllWorkReports({ managerName, users }: { managerName: string; us
 
   return (
     <div>
-      <div style={S.card}>
+      {showRates && (<div style={S.card}>
         <div style={S.title}>約束の達成率（全員・自動計算）</div>
         <div style={{ ...S.gray, marginBottom: 8 }}>できた＝1、途中＝0.5、できなかった＝0 の平均です。簡単な約束ばかりでも上がるので、約束の中身も合わせて見てください。</div>
         {members.length === 0 && <div style={S.gray}>メンバーの情報を読み込めていません</div>}
@@ -349,14 +366,14 @@ export function AllWorkReports({ managerName, users }: { managerName: string; us
             </div>
           );
         })}
-      </div>
+      </div>)}
 
       <div style={S.card}>
         <div style={S.title}>日報一覧</div>
         {msg && <div style={msg.kind === "ok" ? S.ok : S.err}>{msg.text}</div>}
         <div style={S.label}>日付</div>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value || todayStr())} style={S.dateInput} />
-        <div style={{ ...S.gray, marginTop: 8 }}>提出 {rows.length}件 / 未提出 {notYet.length}名 / 詰まり・できなかった項目あり {stuck}名</div>
+        {showRates ? (<div style={{ ...S.gray, marginTop: 8 }}>提出 {rows.length}件 / 未提出 {notYet.length}名 / 詰まり・できなかった項目あり {stuck}名</div>) : (<div style={{ ...S.gray, marginTop: 8 }}>提出 {rows.length}件</div>)}
       </div>
 
       {rows.map((r) => (
@@ -379,10 +396,10 @@ export function AllWorkReports({ managerName, users }: { managerName: string; us
               <div style={{ whiteSpace: "pre-wrap" }}>{c.text}</div>
             </div>
           ))}
-          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+          {canComment && (<div style={{ marginTop: 10, display: "flex", gap: 6 }}>
             <input value={drafts[r.id || ""] || ""} onChange={(e) => setDrafts((p) => ({ ...p, [r.id || ""]: e.target.value }))} placeholder="コメントを書く" style={{ flex: 1, padding: 8, fontSize: 14, border: "1px solid #D3D1C7", borderRadius: 8 }} />
             <button style={S.btnGhost} onClick={() => addComment(r)}>送信</button>
-          </div>
+          </div>)}
         </div>
       ))}
 
