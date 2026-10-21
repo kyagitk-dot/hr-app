@@ -104,7 +104,7 @@ function MySalesLine({ uid, date }: { uid: string; date: string }) {
 }
 
 // ── 社員用：期日になった約束の結果を選び、詰まりと、次の約束（期日つき）を書く ──
-export function MyWorkReport({ uid, displayName }: { uid: string; displayName: string }) {
+export function MyWorkReport({ uid, displayName, hideSwitcher = false }: { uid: string; displayName: string; hideSwitcher?: boolean }) {
   const emptyPlans = (d: string): Plan[] => [0, 1, 2].map(() => ({ text: "", due: addDays(d, 1) }));
   const [date, setDate] = useState<string>(todayStr());
   const [review, setReview] = useState<Item[]>([]);
@@ -198,13 +198,13 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
     } catch (e) { setMsg({ kind: "err", text: explain(e) }); }
   };
 
-  const switcher = (
+  const switcher = hideSwitcher ? null : (
     <div style={{ marginBottom: 12 }}>
       <Chip on={view === "mine"} label="自分の日報" onClick={() => setView("mine")} />
       <Chip on={view === "all"} label="みんなの日報" onClick={() => setView("all")} />
     </div>
   );
-  if (view === "all") {
+  if (view === "all" && !hideSwitcher) {
     return (
       <div>
         {switcher}
@@ -408,6 +408,24 @@ export function AllWorkReports({ managerName, users, canComment = true, showRate
           <div style={S.title}>この日の未提出（{notYet.length}名）</div>
           <div style={{ fontSize: 13, color: "#5F5E5A", lineHeight: 1.8 }}>{notYet.map((u: any) => u.name || u.email).join("、")}</div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── 管理者用：自分の日報を書く／全員の日報を管理する、の切り替え ──
+export function ManagerWorkReport({ uid, displayName, users }: { uid: string; displayName: string; users: any[] }) {
+  const [view, setView] = useState<"all" | "mine">("all");
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <Chip on={view === "all"} label="全員の日報（管理）" onClick={() => setView("all")} />
+        <Chip on={view === "mine"} label="自分の日報を書く" onClick={() => setView("mine")} />
+      </div>
+      {view === "all" ? (
+        <AllWorkReports managerName={displayName} users={users} />
+      ) : (
+        <MyWorkReport uid={uid} displayName={displayName} hideSwitcher={true} />
       )}
     </div>
   );
