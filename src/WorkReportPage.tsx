@@ -38,7 +38,7 @@ type Plan = { text: string; due: string };
 type Item = { text: string; result: string; planId?: string; due?: string };
 type Report = {
   id?: string; uid: string; displayName: string; date: string;
-  review?: Item[]; blockers?: string[]; note?: string; plans?: Plan[]; tomorrowItems?: string[];
+  review?: Item[]; blockers?: string[]; note?: string; doneToday?: string; remarks?: string; plans?: Plan[]; tomorrowItems?: string[];
   comments?: { by: string; at: string; text: string }[];
   updatedAt?: string;
 };
@@ -109,7 +109,8 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
   const [date, setDate] = useState<string>(todayStr());
   const [review, setReview] = useState<Item[]>([]);
   const [blockers, setBlockers] = useState<string[]>([]);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(""); // 今日できたこと
+  const [remarks, setRemarks] = useState("");
   const [plans, setPlans] = useState<Plan[]>(emptyPlans(todayStr()));
   const [later, setLater] = useState<Plan[]>([]);
   const [comments, setComments] = useState<Report["comments"]>([]);
@@ -149,9 +150,9 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
         if (snap.exists()) {
           const d: any = snap.data();
           setReview((d.review || []).map((x: any) => ({ text: String(x.text || ""), result: String(x.result || ""), planId: x.planId ? String(x.planId) : undefined, due: x.due ? String(x.due) : undefined })));
-          setBlockers(d.blockers || []); setNote(d.note || ""); setPlans(padPlans(plansOf(d))); setComments(d.comments || []);
+          setBlockers(d.blockers || []); setNote(d.doneToday || ""); setRemarks(d.remarks || ""); setPlans(padPlans(plansOf(d))); setComments(d.comments || []);
         } else {
-          setReview(pending); setBlockers([]); setNote(""); setPlans(padPlans([])); setComments([]);
+          setReview(pending); setBlockers([]); setNote(""); setRemarks(""); setPlans(padPlans([])); setComments([]);
         }
       } catch (e) { if (alive) setMsg({ kind: "err", text: explain(e) }); }
     })();
@@ -179,7 +180,7 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
     const unanswered = review.filter((x) => !x.result).length;
     if (unanswered > 0) { setMsg({ kind: "err", text: "期日になった約束の結果を、すべて選んでください（あと" + unanswered + "件）" }); return; }
     const pl = plans.map((p) => ({ text: p.text.trim(), due: p.due || addDays(date, 1) })).filter((p) => p.text);
-    if (!review.length && !pl.length && !note.trim()) { setMsg({ kind: "err", text: "次にやること、または共有・相談したいことを入力してください" }); return; }
+    if (!review.length && !pl.length && !note.trim()) { setMsg({ kind: "err", text: "今日できたこと、または次にやることを入力してください" }); return; }
     try {
       const ref = doc(db, COL, date + "_" + uid);
       const prev = await getDoc(ref);
@@ -187,7 +188,7 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
       await setDoc(ref, {
         uid, displayName, date,
         review: review.map((x) => ({ text: x.text, result: x.result, planId: x.planId || "", due: x.due || "" })),
-        blockers, note: note.trim(), plans: pl,
+        blockers, doneToday: note.trim(), remarks: remarks.trim(), plans: pl,
         comments: keep.comments || [],
         createdAt: keep.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -240,11 +241,12 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
           </div>
         )}
 
+        <div style={S.label}>今日できたこと（できたことを書く。なければ空欄でOK）</div>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} style={{ ...S.input, minHeight: 64 }} placeholder="例：A社へ見積書を送付した／新人の同行指導をした" />
+
         <div style={S.label}>詰まっていること（当てはまるものを選ぶ）</div>
         <div>{BLOCKERS.map((b) => <Chip key={b} on={blockers.includes(b)} label={b} onClick={() => toggleBlocker(b)} />)}</div>
 
-        <div style={S.label}>共有・相談したいこと（任意。なければ空欄でOK）</div>
-        <input value={note} onChange={(e) => setNote(e.target.value)} style={S.input} placeholder="例：お客様から〇〇の問い合わせが多かった／〇〇について相談したい" />
 
         <div style={S.label}>次にやること（1〜3個。期日を決めてください）</div>
         <div style={{ ...S.gray, marginBottom: 6 }}>期日になった日以降の日報で、結果を選びます。期日の前の日に書いても大丈夫です</div>
@@ -254,6 +256,9 @@ export function MyWorkReport({ uid, displayName }: { uid: string; displayName: s
             <input type="date" value={p.due} min={date} onChange={(e) => setPlans(plans.map((y, j) => (j === i ? { ...y, due: e.target.value || addDays(date, 1) } : y)))} style={S.dateInput} />
           </div>
         ))}
+
+        <div style={S.label}>備考（任意）</div>
+        <input value={remarks} onChange={(e) => setRemarks(e.target.value)} style={S.input} placeholder="例：明日は直行直帰／在庫は〇〇店に確認済み" />
 
         <div style={{ marginTop: 12 }}><button style={S.btn} onClick={save}>保存する</button></div>
 
@@ -364,9 +369,10 @@ export function AllWorkReports({ managerName, users }: { managerName: string; us
           ))}
           <div style={S.label}>詰まっていること</div>
           <div style={{ fontSize: 14 }}>{(r.blockers || []).join("、") || "—"}</div>
-          {r.note ? (<div><div style={S.label}>共有・相談したいこと</div><div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{r.note}</div></div>) : null}
+          {r.doneToday ? (<div><div style={S.label}>今日できたこと</div><div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{r.doneToday}</div></div>) : null}
           <div style={S.label}>次にやること</div>
           <div style={{ fontSize: 14 }}>{plansOf(r).filter((p) => p.text).map((p) => p.text + "（期日 " + mdOf(p.due) + "）").join(" / ") || "—"}</div>
+          {r.remarks ? (<div><div style={S.label}>備考</div><div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{r.remarks}</div></div>) : null}
           {(r.comments || []).map((c, i) => (
             <div key={i} style={{ background: "#F4F3EF", borderRadius: 8, padding: 8, fontSize: 13, marginTop: 8 }}>
               <div style={S.gray}>{c.by} / {String(c.at).slice(0, 16).replace("T", " ")}</div>
