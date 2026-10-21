@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { auth, db } from "./firebase";
-import { MyWorkReport, AllWorkReports } from "./WorkReportPage";
+import { MyWorkReport, AllWorkReports, ManagerWorkReport } from "./WorkReportPage";
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -2873,7 +2873,7 @@ export default function App() {
       {page==="results"&&<ResultsPage users={users} evals={evals}/>}
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports} users={users}/>}
-      {page==="workreport"&&<AllWorkReports managerName={userProfile?.name||authUser.email||"管理者"} users={users}/>}
+      {page==="workreport"&&<ManagerWorkReport uid={authUser.uid} displayName={userProfile?.name||authUser.email||"管理者"} users={users}/>}
       {page==="interview"&&<InterviewPage users={users}/>}
       {page==="training"&&<TrainingPDCAPage users={users}/>}
       {page==="linesend"&&<LineSendPage/>}
