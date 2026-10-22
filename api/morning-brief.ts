@@ -186,6 +186,47 @@ export default async function handler(req: any, res: any) {
       for (const t of targets) (personal[t] ||= []).push(m);
     }
 
+    // ── 日報（work_reports）の取り込み：期日になった約束と、昨日の提出状況 ──
+    const wrPending: Record<string, { text: string; due: string }[]> = {};
+    let wrYesterday: any[] = [];
+    const yesterday = new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10);
+    const from35 = new Date(Date.now() + 9 * 3600000 - 35 * 86400000).toISOString().slice(0, 10);
+    try {
+      const wr = (await db.collection("work_reports").where("date", ">=", from35).get()).docs.map((d) => d.data() as any);
+      const reviewed = new Set<string>();
+      for (const r of wr) for (const x of r.review || []) { if (x && x.planId) reviewed.add(String(x.planId)); }
+      for (const r of wr) {
+        const base: any[] = r.plans && r.plans.length ? r.plans : (r.tomorrowItems || []).map((t: any) => ({ text: String(t), due: new Date(new Date(String(r.date) + "T00:00:00Z").getTime() + 86400000).toISOString().slice(0, 10) }));
+        base.forEach((p: any, idx: number) => {
+          if (!p || !p.text || reviewed.has(String(r.date) + "#" + idx)) return;
+          if (String(p.due) <= today) (wrPending[String(r.uid)] ||= []).push({ text: String(p.text), due: String(p.due) });
+        });
+      }
+      wrYesterday = wr.filter((r) => String(r.date) === yesterday);
+    } catch (e) { console.error("work_reports read failed", e); }
+    const md = (s: string) => { const p = s.split("-"); return p.length === 3 ? Number(p[1]) + "/" + Number(p[2]) : s; };
+    // 個人向け：期日になっている約束の一覧（決まった文章）
+    const promiseText = (uid: string): string => {
+      const list = (wrPending[uid] || []).sort((a, b) => a.due.localeCompare(b.due));
+      if (!list.length) return "";
+      const lines = list.slice(0, 5).map((p) => "・" + p.text + "（期日 " + md(p.due) + (p.due < today ? "・超過" : "") + "）");
+      return "📌 期日になっている約束（日報）\n" + lines.join("\n") + (list.length > 5 ? "\nほか" + (list.length - 5) + "件" : "") + "\nStellaの日報で、結果（できた／途中／できなかった）を選んでください。";
+    };
+    // 管理者向け：昨日の日報の要約（決まった文章）
+    const adminReportText = (): string => {
+      if (!wrYesterday.length) return "";
+      const bad: string[] = []; const stuck: string[] = [];
+      for (const r of wrYesterday) {
+        for (const x of r.review || []) { if (x && x.result === "not") bad.push(String(r.displayName) + "：" + String(x.text)); }
+        const b = (r.blockers || []).filter((k: string) => k !== "特になし");
+        if (b.length) stuck.push(String(r.displayName) + "：" + b.join("・"));
+      }
+      const parts = ["📝 昨日（" + md(yesterday) + "）の日報：" + wrYesterday.length + "名が提出"];
+      if (bad.length) parts.push("できなかった約束：\n" + bad.slice(0, 5).map((x) => "・" + x).join("\n"));
+      if (stuck.length) parts.push("詰まり：\n" + stuck.slice(0, 5).map((x) => "・" + x).join("\n"));
+      return parts.join("\n");
+    };
+
     // 直近3日の活動（声掛け判定用）
     const since = new Date(Date.now() - 3 * 86400000);
     const active = new Set<string>();
@@ -216,7 +257,8 @@ export default async function handler(req: any, res: any) {
 const overall = memos.length
           ? await writeBrief(buildFacts(memos, today, true), today, "overall", name, settings)
           : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。予定や約束をこのLINEに送ってもらえれば、ここに載せていきます。`;
-        const okOverall = await pushText(lineId, overall);
+        const reportAdd = adminReportText();
+        const okOverall = await pushText(lineId, reportAdd ? overall + "\n\n" + reportAdd : overall);
         if (okOverall) { sentTo.push(`${name}(全体版)`); await markDone(); } else failed.push(name);
         continue;
       }
@@ -224,9 +266,20 @@ const overall = memos.length
       if (personal[lineId]) {
         // 個人版
         const brief = await writeBrief(buildFacts(personal[lineId], today, false), today, "personal", name, settings);
-        const okBrief = await pushText(lineId, brief);
+        const promiseAdd = promiseText(lineUid[lineId] || "");
+        const okBrief = await pushText(lineId, promiseAdd ? brief + "\n\n" + promiseAdd : brief);
         if (okBrief) { sentTo.push(name); await markDone(); } else failed.push(name);
         continue;
+      }
+
+      // 日報の約束だけがある人（未完了メモはないが、期日になった約束がある）
+      if (!personal[lineId]) {
+        const onlyPromise = promiseText(lineUid[lineId] || "");
+        if (onlyPromise) {
+          const okP = await pushText(lineId, "おはようございます。" + name + "さん\n\n" + onlyPromise);
+          if (okP) { sentTo.push(name + "(約束)"); await markDone(); } else failed.push(name);
+          continue;
+        }
       }
 
       // 声掛け（メモがなく、3日以上動きがなく、本人の希望回数に合う曜日）
