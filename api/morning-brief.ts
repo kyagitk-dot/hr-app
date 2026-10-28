@@ -130,7 +130,17 @@ export default async function handler(req: any, res: any) {
   const cronSecret = process.env.CRON_SECRET;
   const viaCron = !!cronSecret && req.headers["authorization"] === `Bearer ${cronSecret}`;
   const viaToken = !!ACCESS_TOKEN && auth === ACCESS_TOKEN;
-  if (!viaToken && !viaCron) { res.status(401).send("Unauthorized"); return; }
+  if (!viaToken && !viaCron) {
+    // Vercel Cron を名乗る呼び出しが断られた場合だけ、原因調べ用に1日1件（上書き）記録する
+    try {
+      const ua = String(req.headers["user-agent"] || "");
+      if (ua.startsWith("vercel-cron")) {
+        await db.collection("brief_runs").doc(jstToday() + "_unauthorized").set({ date: jstToday(), kind: "unauthorized", via: "vercel-cron?", hasSecretEnv: !!cronSecret, hasAuthHeader: !!req.headers["authorization"], at: new Date() });
+      }
+    } catch (e) { console.error("brief_runs(unauthorized) failed", e); }
+    res.status(401).send("Unauthorized");
+    return;
+  }
 
   try {
     const now = jstNow();
@@ -236,6 +246,8 @@ export default async function handler(req: any, res: any) {
 
     const sentTo: string[] = [];
     const failed: string[] = []; // LINEに送信を断られた人（送れていないのに成功扱いにしない）
+    const skipped: Record<string, number> = {};
+    const skip = (why: string) => { skipped[why] = (skipped[why] || 0) + 1; };
     const nudged: string[] = [];
 
     for (const lineId of Object.keys(lineName)) {
@@ -246,14 +258,14 @@ export default async function handler(req: any, res: any) {
       const isAdmin = adminLineIds.includes(lineId) || (!!only && lineId === only); // 手動配信(only)は、コマンドを打った本人（管理者確認済み）に必ず全体版を届ける
             // 本人設定ではなく、毎日 10 時台に「まだ処理していない人」へ送る（テスト・手動実行は従来どおり即時）
       const itsTime = force || !!only || (inWindow && !doneToday.has(lineId));
-      if (!itsTime) continue;
+      if (!itsTime) { skip(inWindow ? "処理済み" : "時間帯の外"); continue; }
       // 処理済みの印は送信に成功したときだけ立てる（失敗・未処理の人は次の起動で再送。同じ日に二重には送らない）
       const markDone = async () => { if (!force && !only) await db.collection("brief_sent").doc(`${today}_${lineId}`).set({ date: today, lineId, at: new Date() }); };
 
       if (isAdmin) {
         // 全体版
                 // 自動配信では、未完了メモが無いときは送らない（手動実行・テストでは従来どおり「メモなし」を返す）
-        if (!memos.length && !force && !only) continue;
+        if (!memos.length && !force && !only) { skip("管理者：未完了メモなし"); continue; }
 const overall = memos.length
           ? await writeBrief(buildFacts(memos, today, true), today, "overall", name, settings)
           : `おはようございます。${today} のブリーフィングです。\n\n登録されている業務メモはありません。予定や約束をこのLINEに送ってもらえれば、ここに載せていきます。`;
@@ -284,7 +296,7 @@ const overall = memos.length
 
       // 声掛け（メモがなく、3日以上動きがなく、本人の希望回数に合う曜日）
       const nudgeToday = !only && (force || NUDGE_DAYS[settings.nudgePerWeek]?.includes(dow));
-      if (!nudgeToday || active.has(lineId)) continue;
+      if (!nudgeToday || active.has(lineId)) { skip("対象外（メモ・約束なし）"); continue; }
       const system = `${personaFor(settings, name)}\n所属: ${COMPANY.name}（${COMPANY.business}）`;
       const msg = (await claude(system,
         `ここ数日やり取りがない${name}さんに、LINEで軽く声をかけてください。押しつけがましくなく、返事しやすい一言にして、「予定のメモも仕事の相談も、このLINEにそのまま送ればいい」ことを自然に伝えてください。100字以内。絵文字なし。本文だけを返してください。`, 200))
@@ -297,6 +309,10 @@ const overall = memos.length
     if (sentTo.length || nudged.length) {
       await db.collection("morning_briefs").add({ date: today, hour, memoCount: memos.length, sentTo, nudged, createdAt: new Date() });
     }
+    // 毎回の実行を記録する（届かなかった日の原因を、あとから調べるため）。1回の呼び出しにつき1件
+    try {
+      await db.collection("brief_runs").add({ date: today, hour, via: viaToken ? "token(GitHub/手動)" : "vercel-cron", inWindow, force, only: only || "", memoCount: memos.length, sentTo, failed, nudged, skipped, createdAt: new Date() });
+    } catch (e) { console.error("brief_runs write failed", e); }
     res.status(failed.length ? 502 : 200).json({ ok: failed.length === 0, flushed, failed, date: today, hour, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
     console.error("scheduler error:", err);
