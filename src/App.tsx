@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { auth, db } from "./firebase";
 import { MyWorkReport, AllWorkReports, ManagerWorkReport } from "./WorkReportPage";
+import { BriefRunsPage } from "./BriefRuns";
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -2765,6 +2766,7 @@ const MANAGER_NAV = [
   {id:"linesend",label:"LINE送信",shortLabel:"LINE",icon:"linesend"},
   {id:"users",label:"メンバー管理",shortLabel:"管理",icon:"users"},
   {id:"workreport",label:"業務日報",shortLabel:"日報",icon:"edit"},
+  {id:"briefruns",label:"配信記録",shortLabel:"配信",icon:"settings"},
   {id:"help",label:"使い方",shortLabel:"ヘルプ",icon:"help"},
   {id:"settings",label:"設定",shortLabel:"設定",icon:"settings"},
 ];
@@ -2860,7 +2862,7 @@ export default function App() {
   const onDeleteUser = async(id)=>{ await deleteDoc(doc(db,"users",id)); };
 
   const activePeriod = (settings.periods||PERIODS_DEFAULT).find(p=>p.active)||(settings.periods||PERIODS_DEFAULT)[0];
-  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",workreport:"業務日報",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",help:"使い方を検索",settings:"設定"};
+  const pageTitles = {dashboard:"ダッシュボード",evaluation:"評価フォーム",results:"結果・集計",ai:"AI分析",sales:"販売実績",workreport:"業務日報",briefruns:"配信記録",interview:"面談記録",training:"研修PDCA",linesend:"LINE送信",users:"メンバー管理",help:"使い方を検索",settings:"設定"};
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",color:C.gray[400],fontSize:14}}>読み込み中...</div>;
   if(!authUser) return <LoginPage onLogin={()=>{}}/>;
@@ -2874,6 +2876,7 @@ export default function App() {
       {page==="ai"&&<AIPage users={users} evals={evals} gradeDefs={settings.gradeDefs||GRADE_DEFS_DEFAULT}/>}
       {page==="sales"&&<SalesPage currentUser={authUser} userProfile={userProfile} isManager={true} allReports={allReports} users={users}/>}
       {page==="workreport"&&<ManagerWorkReport uid={authUser.uid} displayName={userProfile?.name||authUser.email||"管理者"} users={users}/>}
+      {page==="briefruns"&&<BriefRunsPage/>}
       {page==="interview"&&<InterviewPage users={users}/>}
       {page==="training"&&<TrainingPDCAPage users={users}/>}
       {page==="linesend"&&<LineSendPage/>}
