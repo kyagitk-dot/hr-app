@@ -264,7 +264,7 @@ export default async function handler(req: any, res: any) {
       const itsTime = force || !!only || (inWindow && !doneToday.has(lineId));
       if (!itsTime) { skip(inWindow ? "処理済み" : "時間帯の外"); continue; }
       // 処理済みの印は送信に成功したときだけ立てる（失敗・未処理の人は次の起動で再送。同じ日に二重には送らない）
-      const markDone = async () => { if (!force && !only) await db.collection("brief_sent").doc(`${today}_${lineId}`).set({ date: today, lineId, at: new Date() }); };
+      const markDone = async () => { if (!only) await db.collection("brief_sent").doc(`${today}_${lineId}`).set({ date: today, lineId, at: new Date() }); };
 
       if (isAdmin) {
         // 全体版
