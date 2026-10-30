@@ -130,7 +130,11 @@ export default async function handler(req: any, res: any) {
   const cronSecret = process.env.CRON_SECRET;
   const viaCron = !!cronSecret && req.headers["authorization"] === `Bearer ${cronSecret}`;
   const viaToken = !!ACCESS_TOKEN && auth === ACCESS_TOKEN;
-  if (!viaToken && !viaCron) {
+  // CRON_SECRET がサーバーに設定されていない間は、Vercel Cron（user-agent が vercel-cron）の呼び出しも受け付ける。
+  // 設定されたら、この分岐は使われず、上の viaCron（Bearer 認証）だけになる。
+  // force / only は viaToken の呼び出しだけに許可しているので、これで受け付けても、できるのは「通常の配信の実行」だけ。
+  const viaVercelCron = !cronSecret && String(req.headers["user-agent"] || "").startsWith("vercel-cron");
+  if (!viaToken && !viaCron && !viaVercelCron) {
     // Vercel Cron を名乗る呼び出しが断られた場合だけ、原因調べ用に1日1件（上書き）記録する
     try {
       const ua = String(req.headers["user-agent"] || "");
@@ -311,7 +315,7 @@ const overall = memos.length
     }
     // 毎回の実行を記録する（届かなかった日の原因を、あとから調べるため）。1回の呼び出しにつき1件
     try {
-      await db.collection("brief_runs").add({ date: today, hour, via: viaToken ? "token(GitHub/手動)" : "vercel-cron", inWindow, force, only: only || "", memoCount: memos.length, sentTo, failed, nudged, skipped, createdAt: new Date() });
+      await db.collection("brief_runs").add({ date: today, hour, via: viaToken ? "token(GitHub/手動)" : (viaCron ? "vercel-cron" : "vercel-cron(UA)"), inWindow, force, only: only || "", memoCount: memos.length, sentTo, failed, nudged, skipped, createdAt: new Date() });
     } catch (e) { console.error("brief_runs write failed", e); }
     res.status(failed.length ? 502 : 200).json({ ok: failed.length === 0, flushed, failed, date: today, hour, memoCount: memos.length, sentTo, nudged });
   } catch (err: any) {
