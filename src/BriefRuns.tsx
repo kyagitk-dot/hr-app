@@ -76,8 +76,24 @@ export function BriefRunsPage() {
   const byDate: Record<string, Run[]> = {};
   for (const r of runs) { if (!byDate[r.date]) byDate[r.date] = []; byDate[r.date].push(r); }
 
+  // 今日の状態（一番上に目立つ形で出す）：送れた／まだ送れていない／まだ時間前
+  const nowJ = jst(new Date());
+  const hourJ = Number(nowJ.time.slice(0, 2));
+  const todayRuns = byDate[todayJ] || [];
+  const todaySent = new Set<string>();
+  for (const r of todayRuns) { for (const n of r.sentTo) todaySent.add(n); }
+  let banner = { color: "#5F5E5A", bg: "#F4F3EF", text: "今日の配信の時間（10時〜18時）の前です" };
+  if (todaySent.size > 0) banner = { color: "#27500A", bg: "#EAF3DE", text: "今日は " + todaySent.size + "名に送信済みです" };
+  else if (hourJ >= 10 && hourJ < 18) {
+    const why = todayRuns.length === 0 ? "今日はまだ、配信の実行の記録がありません" : "実行はありましたが、送信はありません（下の記録の「送らなかった理由」を確認してください）";
+    banner = { color: "#712B13", bg: "#FAECE7", text: "今日はまだ送れていません。" + why };
+  } else if (hourJ >= 18) {
+    banner = { color: "#712B13", bg: "#FAECE7", text: "今日は送れませんでした（18時を過ぎました）。必要なら、LINEで「ブリーフィング全員」と送ってください" };
+  }
+
   return (
     <div>
+      {loaded && !msg && (<div style={{ background: banner.bg, color: banner.color, borderRadius: 10, padding: "10px 14px", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{banner.text}</div>)}
       <div style={S.card}>
         <div style={S.title}>ブリーフィングの配信状況（直近14日）</div>
         {msg && <div style={S.err}>{msg}</div>}
