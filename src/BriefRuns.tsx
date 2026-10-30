@@ -33,7 +33,7 @@ const skipText = (m: Record<string, number>): string => Object.keys(m || {}).map
 
 export function BriefRunsPage() {
   const [runs, setRuns] = useState<Run[]>([]);
-  const [unauth, setUnauth] = useState<string[]>([]);
+  const [unauth, setUnauth] = useState<{ date: string; secret: boolean; header: boolean }[]>([]);
   const [msg, setMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -51,10 +51,10 @@ export function BriefRunsPage() {
             nudged: x.nudged || [], skipped: x.skipped || {}, time: t.time,
           };
         });
-        let un: string[] = [];
+        let un: { date: string; secret: boolean; header: boolean }[] = [];
         try {
           const us = await getDocs(query(collection(db, "brief_runs"), where("kind", "==", "unauthorized")));
-          un = us.docs.map((d) => String((d.data() as any).date || "")).sort().reverse();
+          un = us.docs.map((d) => { const x: any = d.data(); return { date: String(x.date || ""), secret: !!x.hasSecretEnv, header: !!x.hasAuthHeader }; }).sort((a, b) => b.date.localeCompare(a.date));
         } catch (e) { /* 読めなくても、本体の記録は表示する */ }
         if (!alive) return;
         setRuns(rows); setUnauth(un); setLoaded(true);
@@ -111,7 +111,7 @@ export function BriefRunsPage() {
       {unauth.length > 0 && (
         <div style={S.card}>
           <div style={S.title}>認証で断った呼び出し（Vercel Cron）</div>
-          <div style={{ fontSize: 13, color: "#712B13" }}>{unauth.join("、")}</div>
+          <div style={{ fontSize: 13, color: "#712B13", lineHeight: 1.8 }}>{unauth.map((u) => (<div key={u.date}>{u.date}：サーバーのCRON_SECRET「{u.secret ? "あり" : "なし"}」／ Cronが送ってきた認証ヘッダー「{u.header ? "あり" : "なし"}」</div>))}</div>
           <div style={{ ...S.gray, marginTop: 6 }}>Vercel Cronの呼び出しが認証に失敗した日です。CRON_SECRET の設定を確認してください。</div>
         </div>
       )}
