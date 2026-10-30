@@ -156,7 +156,7 @@ export default async function handler(req: any, res: any) {
     const only = !viaToken ? "" : (typeof req.query?.only === "string" ? req.query.only : ""); // Cron経由のときは宛先指定を受け付けない
     // 毎日 BRIEF_HOUR 時台に、その日まだ処理していない人へ送る（GitHubの定時実行は遅れたり飛んだりするので、時間帯で判定して取りこぼしを防ぐ）
     const BRIEF_HOUR = 10;
-    const BRIEF_UNTIL = 13; // この時刻以降は送らない（夜に遅れて送るのを防ぐ）
+    const BRIEF_UNTIL = 18; // この時刻以降は送らない。朝に定時実行が走らなかった日も、午後の実行で、その日のうちに届くように18時までにしている
     const inWindow = hour >= BRIEF_HOUR && hour < BRIEF_UNTIL;
     const doneToday = new Set<string>();
     if (inWindow && !force && !only) {
