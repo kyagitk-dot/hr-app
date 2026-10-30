@@ -127,7 +127,7 @@ export async function listInstructions(lineUserId: string, userName: string): Pr
   if (!mine.length) return '今、あなたが出していて未完了の指示はありません。';
   const lines = mine.map((m, i) => {
     const parts = [`${m.assignee}さん：${m.title}`];
-    if (m.dueDate) parts.push(`期日:${m.dueDate}${m.dueDate < today ? '（期限切れ）' : ''}`);
+    if (m.recurring) parts.push('（常時のタスク）'); else if (m.dueDate) parts.push(`期日:${m.dueDate}${m.dueDate < today ? '（期限切れ）' : ''}`);
     if (m.status === 'pending') parts.push('（まだ了解の返事なし）');
     return `${i + 1}. ${parts.join(' / ')}`;
   });
@@ -144,12 +144,30 @@ export async function listMemos(lineUserId: string, userName: string): Promise<s
     const m = d.data();
     const parts = [m.title];
     if (m.counterparty) parts.push(`相手:${m.counterparty}`);
-    if (m.dueDate) parts.push(`期日:${m.dueDate}`);
+    if (m.recurring) parts.push('（常時のタスク）'); else if (m.dueDate) parts.push(`期日:${m.dueDate}`);
     if (m.assignee && m.assignee !== userName) parts.push(`担当:${m.assignee}`);
     if (m.status === 'pending') parts.push('（未確認）');
     return `${i + 1}. ${parts.join(' / ')}`;
   });
   return `📋 ${userName}さんの未完了メモ・予定（${mine.length}件）\n${lines.join('\n')}\n\n削除したいときは「1番を削除して」のように番号か内容で伝えてください。`;
+}
+
+// ── 常時（繰り返し）のタスクにする：「1番を常時にして」「1番と3番を常時にして」 ──
+// 期日を外し、recurring: true にする。ブリーフィングでは「期日超過」の対象から外れる。
+export async function markRecurring(text: string, lineUserId: string, userName: string): Promise<string> {
+  const db = getFirestore();
+  const snap = await db.collection('work_memos').where('status', 'in', ['open', 'pending']).get();
+  const mine = snap.docs.filter((d) => { const m = d.data(); return m.createdBy === lineUserId || m.assignee === userName; });
+  if (!mine.length) return '常時にできる未完了メモ・予定は今ありません。';
+  const nums = Array.from(new Set((text.match(/[0-9]+/g) || []).map((s) => parseInt(s, 10)))).filter((n) => n >= 1 && n <= mine.length);
+  if (!nums.length) {
+    const list = mine.map((d, i) => `${i + 1}. ${d.data().title}${d.data().recurring ? '（常時）' : ''}`).join('\n');
+    return `どの件を常時にしますか？番号で教えてください（例：1番を常時にして）。\n\n${list}`;
+  }
+  nums.sort((a, b) => a - b);
+  const done: string[] = [];
+  for (const n of nums) { const d = mine[n - 1]; await d.ref.update({ recurring: true, dueDate: null, updatedAt: FieldValue.serverTimestamp() }); done.push(`${n}. ${d.data().title}`); }
+  return `🔁 ${nums.length}件を「常時のタスク」にしました。期日は外れ、超過にはなりません。\n${done.join('\n')}`;
 }
 
 // ── メモの削除（本人からの明示的な依頼のときだけ、実際にFirestoreから削除する）──
