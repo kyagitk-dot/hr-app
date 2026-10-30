@@ -73,7 +73,7 @@ function describe(m: Memo, today: string, withOwner: boolean): string {
   if (withOwner) parts.push(`登録:${m.createdByName || "不明"}`);
   if (m.counterparty) parts.push(`相手:${m.counterparty}`);
   if (m.assignee) parts.push(`担当:${m.assignee}`);
-  if (m.dueDate) {
+  if (m.dueDate && !m.recurring) {
     const d = daysBetween(today, m.dueDate);
     parts.push(d < 0 ? `期日:${m.dueDate}(${-d}日超過)` : d === 0 ? "期日:今日" : `期日:${m.dueDate}(あと${d}日)`);
   }
@@ -83,7 +83,10 @@ function describe(m: Memo, today: string, withOwner: boolean): string {
   return "- " + parts.join(" / ");
 }
 
-function buildFacts(memos: Memo[], today: string, withOwner: boolean): string {
+function buildFacts(allMemos: Memo[], today: string, withOwner: boolean): string {
+  // 常時（繰り返し）のタスクは、期日の超過・停滞の判定から外し、別の区分で静かに出す
+  const standing = allMemos.filter((m) => m.recurring);
+  const memos = allMemos.filter((m) => !m.recurring);
   const overdue = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) < 0);
   const dueSoon = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) >= 0 && daysBetween(today, m.dueDate) <= 3);
   const later = memos.filter((m) => m.dueDate && daysBetween(today, m.dueDate) > 3);
@@ -96,7 +99,7 @@ function buildFacts(memos: Memo[], today: string, withOwner: boolean): string {
     list.length ? `\n【${label}】\n${list.map((m) => describe(m, today, withOwner)).join("\n")}` : "";
   return [
     `今日: ${today}`, `未完了メモ: ${memos.length}件`,
-    sec("期日超過", overdue), sec("3日以内", dueSoon), sec("それ以降", later), sec("期日なし", noDue), sec("7日以上動きなし", stalled),
+    sec("期日超過", overdue), sec("3日以内", dueSoon), sec("それ以降", later), sec("期日なし", noDue), sec("7日以上動きなし", stalled), sec("常時（繰り返し。期日・超過の対象外）", standing),
   ].filter(Boolean).join("\n");
 }
 
